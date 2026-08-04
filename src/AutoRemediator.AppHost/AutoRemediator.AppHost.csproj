@@ -1,0 +1,24 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.4.6">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>5fefeed0-b530-4bdf-92dd-d00578495b13</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.4.6" />
+    <PackageReference Include="Aspire.Hosting.Azure.Storage" Version="13.4.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoRemediator.Api\AutoRemediator.Api.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Web\AutoRemediator.Web.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Worker.Scheduler\AutoRemediator.Worker.Scheduler.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Worker.Remediation\AutoRemediator.Worker.Remediation.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Contracts\AutoRemediator.Contracts.csproj" IsAspireProjectResource="false" />
+  </ItemGroup>
+
+</Project>

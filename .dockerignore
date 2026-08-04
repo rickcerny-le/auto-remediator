@@ -1,0 +1,25 @@
+# Keep the build context small. Source is copied for restore/publish; everything
+# below is either rebuilt in-image or irrelevant to the container build.
+**/bin/
+**/obj/
+**/out/
+.git/
+.github/
+.azuredevops/
+.vs/
+.vscode/
+.idea/
+
+# Not needed to build the service images.
+tests/
+infra/
+openspec/
+**/*.md
+**/Dockerfile
+.dockerignore
+.gitignore
+
+# Local/dev artifacts
+**/.DS_Store
+**/TestResults/
+**/*.user

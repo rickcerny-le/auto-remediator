@@ -1,0 +1,17 @@
+@rendermode InteractiveAuto
+
+<div class="remediation-ping">
+    <p>Interactivity check — running on:
+        <strong data-testid="render-location">@_location</strong>
+    </p>
+    <button class="btn btn-primary" data-testid="ping-button" @onclick="Ping">
+        Pinged @_count time(s)
+    </button>
+</div>
+
+@code {
+    private int _count;
+    private string _location = OperatingSystem.IsBrowser() ? "WebAssembly (client)" : "Server (pre-render)";
+
+    private void Ping() => _count++;
+}

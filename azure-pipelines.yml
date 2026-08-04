@@ -1,0 +1,106 @@
+# Trunk-based CI/CD for AutoRemediator.
+#   PR into main  -> Validate (build + test + build 4 images [no push] + terraform validate)
+#   merge to main -> Validate -> Package (push images) -> Deploy (update ACA test env)
+#
+# One-time setup (Azure Repos, ARM service connection, variable group, branch
+# policy) is documented in .azuredevops/README.md.
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+# The four deployable services — defined once and reused across stages.
+parameters:
+  - name: services
+    type: object
+    default:
+      - { name: api, dockerfile: src/AutoRemediator.Api/Dockerfile }
+      - { name: web, dockerfile: src/AutoRemediator.Web/Dockerfile }
+      - { name: scheduler, dockerfile: src/AutoRemediator.Worker.Scheduler/Dockerfile }
+      - { name: remediation, dockerfile: src/AutoRemediator.Worker.Remediation/Dockerfile }
+
+variables:
+  # Supplies: acrLoginServer, resourceGroup, azureServiceConnection,
+  # apiApp, webApp, schedulerJob, remediationJob.
+  - group: autoremediator-test
+  - name: shortSha
+    value: $[ substring(variables['Build.SourceVersion'], 0, 8) ]
+
+stages:
+  # ---------------------------------------------------------------------------
+  - stage: Validate
+    displayName: Validate (build, test, image build, tf validate)
+    jobs:
+      - job: build_test
+        displayName: Build & test
+        steps:
+          - template: .azuredevops/templates/build-test.yml
+
+      - job: terraform_validate
+        displayName: Terraform validate
+        steps:
+          - template: .azuredevops/templates/terraform-validate.yml
+
+      - job: image_build
+        displayName: Build images (no push)
+        steps:
+          - ${{ each svc in parameters.services }}:
+              - template: .azuredevops/templates/docker-build.yml
+                parameters:
+                  service: ${{ svc.name }}
+                  dockerfile: ${{ svc.dockerfile }}
+                  acrLoginServer: $(acrLoginServer)
+                  azureServiceConnection: $(azureServiceConnection)
+                  push: false
+                  tags:
+                    - $(shortSha)
+
+  # ---------------------------------------------------------------------------
+  - stage: Package
+    displayName: Package (push images)
+    dependsOn: Validate
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: push_images
+        displayName: Build & push images
+        steps:
+          - ${{ each svc in parameters.services }}:
+              - template: .azuredevops/templates/docker-build.yml
+                parameters:
+                  service: ${{ svc.name }}
+                  dockerfile: ${{ svc.dockerfile }}
+                  acrLoginServer: $(acrLoginServer)
+                  azureServiceConnection: $(azureServiceConnection)
+                  push: true
+                  tags:
+                    - $(shortSha)
+                    - latest
+
+  # ---------------------------------------------------------------------------
+  - stage: Deploy
+    displayName: Deploy to ACA test
+    dependsOn: Package
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: deploy
+        displayName: Update Container Apps & Jobs
+        steps:
+          - template: .azuredevops/templates/deploy-aca.yml
+            parameters:
+              azureServiceConnection: $(azureServiceConnection)
+              resourceGroup: $(resourceGroup)
+              acrLoginServer: $(acrLoginServer)
+              imageTag: $(shortSha)
+              apiApp: $(apiApp)
+              webApp: $(webApp)
+              schedulerJob: $(schedulerJob)
+              remediationJob: $(remediationJob)

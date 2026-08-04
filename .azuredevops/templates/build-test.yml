@@ -1,0 +1,35 @@
+# Restore, build, and test the solution. The Playwright functional test
+# self-skips when WEB_BASE_URL is unset, so it does not run here.
+parameters:
+  - name: buildConfiguration
+    type: string
+    default: Release
+
+steps:
+  - task: UseDotNet@2
+    displayName: Use .NET 10 SDK
+    inputs:
+      packageType: sdk
+      version: 10.0.x
+
+  - script: dotnet restore AutoRemediator.sln
+    displayName: Restore
+
+  - script: dotnet build AutoRemediator.sln -c ${{ parameters.buildConfiguration }} --no-restore
+    displayName: Build
+
+  - script: >
+      dotnet test AutoRemediator.sln
+      -c ${{ parameters.buildConfiguration }}
+      --no-build
+      --logger trx
+      --results-directory $(Agent.TempDirectory)/testresults
+    displayName: Test
+
+  - task: PublishTestResults@2
+    displayName: Publish test results
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: VSTest
+      testResultsFiles: '$(Agent.TempDirectory)/testresults/*.trx'
+      failTaskOnFailedTests: true

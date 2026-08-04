@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-AutoRemediator.Worker.Remediation-8b18aac7-21c0-4569-bcb5-4f2c754a2ca3</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoRemediator.Infrastructure\AutoRemediator.Infrastructure.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Contracts\AutoRemediator.Contracts.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Domain\AutoRemediator.Domain.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Agents\AutoRemediator.Agents.csproj" />
+    <ProjectReference Include="..\AutoRemediator.ServiceDefaults\AutoRemediator.ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>

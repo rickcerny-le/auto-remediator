@@ -1,0 +1,40 @@
+# Roll out the commit-tagged images to the ACA test environment. Updates the two
+# Container Apps and two Container Apps Jobs on already-provisioned resources
+# (Terraform owns provisioning; this only swaps the image).
+parameters:
+  - name: azureServiceConnection
+    type: string
+  - name: resourceGroup
+    type: string
+  - name: acrLoginServer
+    type: string
+  - name: imageTag
+    type: string
+  - name: apiApp
+    type: string
+  - name: webApp
+    type: string
+  - name: schedulerJob
+    type: string
+  - name: remediationJob
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Deploy images to ACA test'
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        az extension add --name containerapp --upgrade --yes
+
+        REG="${{ parameters.acrLoginServer }}/autoremediator"
+        TAG="${{ parameters.imageTag }}"
+        RG="${{ parameters.resourceGroup }}"
+
+        az containerapp update      -n "${{ parameters.apiApp }}"         -g "$RG" --image "$REG/api:$TAG"
+        az containerapp update      -n "${{ parameters.webApp }}"         -g "$RG" --image "$REG/web:$TAG"
+        az containerapp job update  -n "${{ parameters.schedulerJob }}"   -g "$RG" --image "$REG/scheduler:$TAG"
+        az containerapp job update  -n "${{ parameters.remediationJob }}" -g "$RG" --image "$REG/remediation:$TAG"

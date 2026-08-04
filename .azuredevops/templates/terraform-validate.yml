@@ -1,0 +1,26 @@
+# Validate the Terraform without cloud access: fmt check + backend-free init +
+# validate. Runs on PRs to catch IaC breakage cheaply. `terraform` is available
+# on the ubuntu-latest hosted image; add the TerraformInstaller task if a pinned
+# version is required (see .azuredevops/README.md).
+parameters:
+  - name: rootDirectory
+    type: string
+    default: infra/terraform
+  - name: environmentDirectory
+    type: string
+    default: infra/terraform/environments/test
+
+steps:
+  - script: terraform version
+    displayName: terraform version
+
+  - script: terraform fmt -check -recursive
+    workingDirectory: ${{ parameters.rootDirectory }}
+    displayName: terraform fmt -check
+
+  - script: |
+      set -euo pipefail
+      terraform init -backend=false -input=false
+      terraform validate
+    workingDirectory: ${{ parameters.environmentDirectory }}
+    displayName: terraform validate

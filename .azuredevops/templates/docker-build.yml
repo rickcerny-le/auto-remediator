@@ -1,0 +1,51 @@
+# Build one service image (and optionally push it). Built from the repo root
+# so shared project references resolve. Push is gated by the `push` parameter,
+# so the same template serves PR validation (push=false) and trunk (push=true).
+parameters:
+  - name: service
+    type: string
+  - name: dockerfile
+    type: string
+  - name: acrLoginServer
+    type: string
+  - name: azureServiceConnection
+    type: string
+  - name: push
+    type: boolean
+    default: false
+  - name: tags
+    type: object
+    default:
+      - latest
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Build image: ${{ parameters.service }}'
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        REPO="${{ parameters.acrLoginServer }}/autoremediator/${{ parameters.service }}"
+        TAG_ARGS=""
+        for t in ${{ join(' ', parameters.tags) }}; do
+          TAG_ARGS="$TAG_ARGS -t $REPO:$t"
+        done
+        echo "Building $REPO with tags: ${{ join(' ', parameters.tags) }}"
+        docker build -f "${{ parameters.dockerfile }}" $TAG_ARGS .
+
+  - ${{ if eq(parameters.push, true) }}:
+      - task: AzureCLI@2
+        displayName: 'Push image: ${{ parameters.service }}'
+        inputs:
+          azureSubscription: ${{ parameters.azureServiceConnection }}
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
+            REPO="${{ parameters.acrLoginServer }}/autoremediator/${{ parameters.service }}"
+            az acr login --name "${{ parameters.acrLoginServer }}"
+            for t in ${{ join(' ', parameters.tags) }}; do
+              docker push "$REPO:$t"
+            done

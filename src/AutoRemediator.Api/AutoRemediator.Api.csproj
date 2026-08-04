@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoRemediator.Infrastructure\AutoRemediator.Infrastructure.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Contracts\AutoRemediator.Contracts.csproj" />
+    <ProjectReference Include="..\AutoRemediator.Domain\AutoRemediator.Domain.csproj" />
+    <ProjectReference Include="..\AutoRemediator.ServiceDefaults\AutoRemediator.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

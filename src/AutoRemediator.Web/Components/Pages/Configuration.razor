@@ -1,0 +1,155 @@
+@page "/configuration"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
+@using AutoRemediator.Contracts.Dtos
+@inject IHttpClientFactory HttpFactory
+
+<PageTitle>Configuration</PageTitle>
+
+<h1>Configuration</h1>
+
+@if (_status is not null)
+{
+    <div class="alert alert-info" data-testid="config-status">@_status</div>
+}
+
+<h2 class="mt-4">Targeting settings</h2>
+<div class="row g-2" style="max-width: 720px;">
+    <div class="col-12">
+        <label class="form-label">Package patterns (comma-separated)</label>
+        <input class="form-control" data-testid="patterns" @bind="_patterns" placeholder="Orion180.*" />
+    </div>
+    <div class="col-12">
+        <label class="form-label">Exclude patterns</label>
+        <input class="form-control" @bind="_excludes" placeholder="Orion180.Legacy.*" />
+    </div>
+    <div class="col-12">
+        <label class="form-label">Feeds</label>
+        <input class="form-control" @bind="_feeds" placeholder="https://pkgs.dev.azure.com/Orion180/..." />
+    </div>
+    <div class="col-6">
+        <label class="form-label">Strategy</label>
+        <select class="form-select" @bind="_strategy">
+            <option>Patch</option>
+            <option>Minor</option>
+            <option>Major</option>
+        </select>
+    </div>
+    <div class="col-6 d-flex align-items-end">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" @bind="_allowPrerelease" id="prerelease" />
+            <label class="form-check-label" for="prerelease">Allow pre-release</label>
+        </div>
+    </div>
+    <div class="col-12">
+        <button class="btn btn-primary" data-testid="save-settings" @onclick="SaveSettingsAsync">Save settings</button>
+    </div>
+</div>
+
+<h2 class="mt-5">Managed repositories</h2>
+@if (_repos is null)
+{
+    <p><em>Loading…</em></p>
+}
+else
+{
+    <table class="table" data-testid="repos-table" style="max-width: 900px;">
+        <thead>
+            <tr><th>Organization</th><th>Project</th><th>Name</th><th>Branch</th><th>Enabled</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _repos)
+            {
+                <tr>
+                    <td>@r.Organization</td><td>@r.Project</td><td>@r.Name</td><td>@r.TargetBranch</td>
+                    <td>@(r.Enabled ? "yes" : "no")</td>
+                    <td><button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(r.Id)">Delete</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<div class="row g-2 mt-2" style="max-width: 900px;">
+    <div class="col"><input class="form-control" placeholder="organization" @bind="_newOrg" /></div>
+    <div class="col"><input class="form-control" placeholder="project" @bind="_newProject" /></div>
+    <div class="col"><input class="form-control" placeholder="repository" @bind="_newName" /></div>
+    <div class="col"><input class="form-control" placeholder="branch" @bind="_newBranch" /></div>
+    <div class="col-auto"><button class="btn btn-success" data-testid="add-repo" @onclick="AddAsync">Add</button></div>
+</div>
+
+@code {
+    private List<ManagedRepositoryDto>? _repos;
+    private string? _status;
+
+    private string _patterns = "";
+    private string _excludes = "";
+    private string _feeds = "";
+    private string _strategy = "Minor";
+    private bool _allowPrerelease;
+
+    private string _newOrg = "";
+    private string _newProject = "";
+    private string _newName = "";
+    private string _newBranch = "main";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettingsAsync();
+        await LoadReposAsync();
+    }
+
+    private HttpClient Api => HttpFactory.CreateClient("api");
+
+    private async Task LoadSettingsAsync()
+    {
+        try
+        {
+            var s = await Api.GetFromJsonAsync<TargetingSettingsDto>("api/settings");
+            if (s is not null)
+            {
+                _patterns = string.Join(", ", s.Patterns);
+                _excludes = string.Join(", ", s.Excludes);
+                _feeds = string.Join(", ", s.Feeds);
+                _strategy = s.Strategy;
+                _allowPrerelease = s.AllowPrerelease;
+            }
+        }
+        catch (Exception ex) { _status = $"Could not load settings: {ex.Message}"; }
+    }
+
+    private async Task LoadReposAsync()
+    {
+        try { _repos = await Api.GetFromJsonAsync<List<ManagedRepositoryDto>>("api/repositories") ?? []; }
+        catch (Exception ex) { _status = $"Could not load repositories: {ex.Message}"; _repos = []; }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        var dto = new TargetingSettingsDto(
+            Split(_patterns), Split(_excludes), Split(_feeds), _strategy, [], _allowPrerelease);
+        var response = await Api.PutAsJsonAsync("api/settings", dto);
+        _status = response.IsSuccessStatusCode ? "Settings saved." : $"Save failed ({(int)response.StatusCode}).";
+    }
+
+    private async Task AddAsync()
+    {
+        var input = new ManagedRepositoryInput(_newOrg, _newProject, _newName, true, string.IsNullOrWhiteSpace(_newBranch) ? "main" : _newBranch);
+        var response = await Api.PostAsJsonAsync("api/repositories", input);
+        if (response.IsSuccessStatusCode)
+        {
+            _newOrg = _newProject = _newName = ""; _newBranch = "main";
+            await LoadReposAsync();
+        }
+        else { _status = $"Add failed ({(int)response.StatusCode})."; }
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        await Api.DeleteAsync($"api/repositories/{id}");
+        await LoadReposAsync();
+    }
+
+    private static List<string> Split(string csv) =>
+        csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+}
