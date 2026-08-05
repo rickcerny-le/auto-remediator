@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
+using AutoRemediator.Infrastructure.Alignment;
 using AutoRemediator.Infrastructure.Analysis;
 using AutoRemediator.Infrastructure.AzureDevOps;
 using AutoRemediator.Infrastructure.Configuration;
@@ -81,6 +82,8 @@ public static class InfrastructureExtensions
 
         // Feed version resolution + analysis + planning + remediation.
         builder.Services.AddSingleton<IFeedVersionResolver, FeedVersionResolver>();
+        builder.Services.AddSingleton<IPackageDependencyReader, PackageDependencyReader>();
+        builder.Services.AddScoped<IDependencyAligner, DependencyAligner>();
         builder.Services.AddScoped<IRepositoryAnalyzer, RepositoryAnalyzer>();
         builder.Services.AddScoped<IDependencyMapService, DependencyMapService>();
         builder.Services.AddScoped<IUpdatePlanner, UpdatePlanner>();

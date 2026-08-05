@@ -87,11 +87,23 @@ internal sealed class RemediationRunner(
         var sb = new StringBuilder();
         sb.AppendLine("Automated dependency update by **AutoRemediator**.");
         sb.AppendLine();
-        sb.AppendLine("| Package | From | To |");
-        sb.AppendLine("| --- | --- | --- |");
+        sb.AppendLine("| Package | From | To | Kind |");
+        sb.AppendLine("| --- | --- | --- | --- |");
         foreach (var u in plan.Updates)
         {
-            sb.AppendLine($"| {u.PackageId} | {u.FromVersion} | {u.ToVersion} |");
+            var kind = u.Kind == UpdateKind.Collateral ? "collateral" : "matched";
+            if (u.BeyondPolicy)
+            {
+                kind += " ⚠ beyond policy";
+            }
+
+            sb.AppendLine($"| {u.PackageId} | {u.FromVersion} | {u.ToVersion} | {kind} |");
+        }
+
+        if (plan.Updates.Any(u => u.BeyondPolicy))
+        {
+            sb.AppendLine();
+            sb.AppendLine("> ⚠ Some collateral bumps were escalated **beyond the update policy** to keep the dependency set consistent.");
         }
 
         return sb.ToString();

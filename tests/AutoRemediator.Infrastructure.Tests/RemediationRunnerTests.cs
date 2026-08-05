@@ -35,6 +35,24 @@ public class RemediationRunnerTests
     }
 
     [Fact]
+    public async Task Pr_summary_labels_collateral_and_notes_escalation()
+    {
+        var plan = new RepositoryUpdatePlan(
+            [
+                new DependencyUpdate("Orion180.Core", "1.4.0", "1.5.0", UpdateKind.Matched),
+                new DependencyUpdate("Orion180.Common", "1.4.0", "2.0.0", UpdateKind.Collateral, BeyondPolicy: true),
+            ],
+            [new ChangedManifest("/Directory.Packages.props", "<Project/>")]);
+        var ado = new FakeAdo();
+
+        await RunAsync(plan, ado, new RecordingRunStore());
+
+        Assert.NotNull(ado.LastDescription);
+        Assert.Contains("collateral", ado.LastDescription);
+        Assert.Contains("beyond policy", ado.LastDescription);
+    }
+
+    [Fact]
     public async Task NoUpdates_when_plan_is_empty()
     {
         var ado = new FakeAdo();
@@ -109,6 +127,7 @@ public class RemediationRunnerTests
         public string PrUrl { get; set; } = "https://pr";
         public bool ThrowOnPush { get; set; }
         public int Pushes { get; private set; }
+        public string? LastDescription { get; private set; }
 
         public Task<bool> RepositoryExistsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult(true);
         public Task<IReadOnlyList<RepositoryFile>> GetManifestsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RepositoryFile>>([]);
@@ -119,7 +138,11 @@ public class RemediationRunnerTests
             Pushes++;
             return Task.CompletedTask;
         }
-        public Task<string> EnsurePullRequestAsync(ManagedRepository r, string s, string t, string title, string desc, CancellationToken ct = default) => Task.FromResult(PrUrl);
+        public Task<string> EnsurePullRequestAsync(ManagedRepository r, string s, string t, string title, string desc, CancellationToken ct = default)
+        {
+            LastDescription = desc;
+            return Task.FromResult(PrUrl);
+        }
     }
 
     private sealed class RecordingRunStore : IRemediationRunStore

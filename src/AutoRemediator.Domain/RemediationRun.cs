@@ -14,8 +14,23 @@ public enum RunStatus
     Failed,
 }
 
+/// <summary>Why a package was bumped.</summary>
+public enum UpdateKind
+{
+    /// <summary>A matched package bumped by policy.</summary>
+    Matched,
+
+    /// <summary>A declared sibling bumped by intra-family alignment.</summary>
+    Collateral,
+}
+
 /// <summary>A single package version change applied by a run.</summary>
-public sealed record DependencyUpdate(string PackageId, string FromVersion, string ToVersion);
+public sealed record DependencyUpdate(
+    string PackageId,
+    string FromVersion,
+    string ToVersion,
+    UpdateKind Kind = UpdateKind.Matched,
+    bool BeyondPolicy = false);
 
 /// <summary>
 /// A remediation run for one repository: bumps matched outdated packages and opens a

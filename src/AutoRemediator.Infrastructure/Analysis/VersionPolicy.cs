@@ -37,4 +37,12 @@ public static class VersionPolicy
 
         return best;
     }
+
+    /// <summary>True when moving from <paramref name="current"/> to <paramref name="candidate"/> stays within the strategy band.</summary>
+    public static bool IsWithinBand(NuGetVersion current, NuGetVersion candidate, UpdateStrategy strategy) => strategy switch
+    {
+        UpdateStrategy.Patch => candidate.Major == current.Major && candidate.Minor == current.Minor,
+        UpdateStrategy.Minor => candidate.Major == current.Major,
+        _ => true,
+    };
 }

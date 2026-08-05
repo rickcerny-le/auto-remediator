@@ -1,4 +1,5 @@
 using AutoRemediator.Domain;
+using AutoRemediator.Infrastructure.Alignment;
 
 namespace AutoRemediator.Infrastructure.Analysis;
 
@@ -13,37 +14,70 @@ public sealed record RepositoryUpdatePlan(IReadOnlyList<DependencyUpdate> Update
     public static RepositoryUpdatePlan Empty => new([], []);
 }
 
-/// <summary>Computes the matched-outdated version bumps and the resulting edited manifests.</summary>
-public interface IUpdatePlanner
-{
-    Task<RepositoryUpdatePlan> PlanAsync(ManagedRepository repository, TargetingSettings settings, CancellationToken cancellationToken = default);
-}
-
-internal sealed class UpdatePlanner(IRepositoryAnalyzer analyzer) : IUpdatePlanner
+/// <summary>
+/// Computes the policy primary bumps, then adds the minimal collateral bumps from intra-family
+/// alignment, and produces the edited manifests reflecting both.
+/// </summary>
+internal sealed class UpdatePlanner(IRepositoryAnalyzer analyzer, IDependencyAligner aligner) : IUpdatePlanner
 {
     public async Task<RepositoryUpdatePlan> PlanAsync(ManagedRepository repository, TargetingSettings settings, CancellationToken cancellationToken = default)
     {
         var analysis = await analyzer.AnalyzeAsync(repository, settings, cancellationToken);
 
-        var updates = new Dictionary<string, DependencyUpdate>(StringComparer.OrdinalIgnoreCase);
-        var changed = new List<ChangedManifest>();
+        // Declared matched packages (dedup by id, prefer a concrete current version).
+        var declaredCurrent = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // Primary targets: outdated matched packages → their policy target.
+        var primaryTargets = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var manifest in analysis.Manifests)
+        foreach (var package in analysis.Manifests.SelectMany(m => m.Packages))
         {
-            var outdated = manifest.Packages
-                .Where(p => p.Status == DependencyStatus.Outdated && p.CurrentVersion is not null && p.LatestVersion is not null)
-                .ToList();
+            if (package.CurrentVersion is not null && !declaredCurrent.ContainsKey(package.PackageId))
+            {
+                declaredCurrent[package.PackageId] = package.CurrentVersion;
+            }
 
-            if (outdated.Count == 0)
+            if (package.Status == DependencyStatus.Outdated && package.CurrentVersion is not null && package.LatestVersion is not null)
+            {
+                primaryTargets[package.PackageId] = package.LatestVersion;
+            }
+        }
+
+        // chosen = current overlaid with the policy primaries; then align the family.
+        var chosen = new Dictionary<string, string>(declaredCurrent, StringComparer.OrdinalIgnoreCase);
+        foreach (var (id, target) in primaryTargets)
+        {
+            chosen[id] = target;
+        }
+
+        var alignment = await aligner.AlignAsync(declaredCurrent, chosen, settings, cancellationToken);
+
+        // Updates = declared packages whose resolved version moved.
+        var updates = new List<DependencyUpdate>();
+        foreach (var (id, current) in declaredCurrent)
+        {
+            if (!alignment.Chosen.TryGetValue(id, out var to) || string.Equals(to, current, StringComparison.Ordinal))
             {
                 continue;
             }
 
+            updates.Add(new DependencyUpdate(
+                id, current, to,
+                primaryTargets.ContainsKey(id) ? UpdateKind.Matched : UpdateKind.Collateral,
+                alignment.BeyondPolicy.Contains(id)));
+        }
+
+        // Edit each manifest for the packages it declares that changed.
+        var finalVersions = updates.ToDictionary(u => u.PackageId, u => u.ToVersion, StringComparer.OrdinalIgnoreCase);
+        var changed = new List<ChangedManifest>();
+        foreach (var manifest in analysis.Manifests)
+        {
             var content = manifest.Content;
-            foreach (var package in outdated)
+            foreach (var package in manifest.Packages)
             {
-                content = ManifestEditor.SetVersion(content, package.PackageId, package.LatestVersion!);
-                updates[package.PackageId] = new DependencyUpdate(package.PackageId, package.CurrentVersion!, package.LatestVersion!);
+                if (finalVersions.TryGetValue(package.PackageId, out var to))
+                {
+                    content = ManifestEditor.SetVersion(content, package.PackageId, to);
+                }
             }
 
             if (!string.Equals(content, manifest.Content, StringComparison.Ordinal))
@@ -52,6 +86,12 @@ internal sealed class UpdatePlanner(IRepositoryAnalyzer analyzer) : IUpdatePlann
             }
         }
 
-        return new RepositoryUpdatePlan(updates.Values.ToList(), changed);
+        return new RepositoryUpdatePlan(updates, changed);
     }
+}
+
+/// <summary>Computes the version bumps (policy primaries + collateral alignment) and edited manifests.</summary>
+public interface IUpdatePlanner
+{
+    Task<RepositoryUpdatePlan> PlanAsync(ManagedRepository repository, TargetingSettings settings, CancellationToken cancellationToken = default);
 }
