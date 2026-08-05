@@ -56,9 +56,11 @@ Decisions:
 - **"Latest" comes from the private feed** (Orion180 feed); matching is on package ID as a glob.
 - **Trigger is a scheduled timer** for now. Package-publish-triggered fan-out
   ("published Orion180.Core 2.0 → cascade to all consumers") is a later direction.
-- **Build model: Option A** — the remediation ACA job clones + builds in-process
-  (self-contained; job image carries the SDK). Delegating build to an ADO pipeline
-  (Option B) is a later scaling option.
+- **Build model: Option B (chosen at Slice 2)** — the tool does **not** build locally.
+  It bumps versions and opens a PR; the targeted repo's own Azure DevOps CI validates
+  the change on that PR. This keeps the remediation job lightweight (no SDK/git, no
+  clone; writes via ADO REST) and aligns with running everything else locally. In-job
+  building (Option A) remains a possible later change if local gating is wanted.
 - **Config scope: global with optional per-repo override** — start global, no rework later.
 
 ## Capability map (walking-skeleton order)
@@ -68,7 +70,7 @@ Decisions:
 | 1 | **target-configuration** | repos[] + patterns + feeds + policy; persisted to Table Storage; API slices + Blazor page | `ManagedRepository` stub, List slice |
 | 1 | **azure-devops-connectivity** | authenticated ADO client (read files/manifests; later create PR) + ADO/feed auth | `StubAzureDevOpsClient` |
 | 1 | **dependency-analysis** | read manifests → match patterns → resolve latest from feed → outdated matched set | *(new)* |
-| 2 | **update-execution** | apply matched updates in a workspace → restore/build(/test) → success or breakage; collateral bumps when the build demands | *(new)* |
+| 2 | **update-execution** | bump matched outdated packages, edit manifest text (no clone/build); validation delegated to the repo's ADO CI on the PR | *(new)* |
 | 2 | **pull-request-authoring** | branch/commit + PR with a change summary | *(part of the ADO client)* |
 | 2 | **run-orchestration** | per-run state machine, status/history/artifacts persistence, idempotency (one open PR per repo/update-set), retries | remediation worker body |
 | 5 | **ai-remediation-loop** | MAF + Foundry agent: build/test errors + diff → fixes (code and/or extra bumps) → re-run, budget-bounded | `MafRemediationAgent` placeholder |
@@ -107,7 +109,8 @@ connectivity; settle it inside the Slice-1 connectivity work (may become its own
            ▶ read-only dependency map in the UI. No writes. First shippable thing.
 
   Slice 2  FIRST PR    update-execution + PR authoring + run status
-           ▶ bump matched Orion180.* to latest, build, open a PR if green (no AI)
+           ▶ bump matched Orion180.* to latest, open a PR; the repo's ADO CI
+             validates it (no local build, no AI)
 
   Slice 3  DEPTH       policy (patch/minor/major, ignore) + collateral bumps to pass the build
   Slice 4  TESTS       run tests; classify build-break vs test-break

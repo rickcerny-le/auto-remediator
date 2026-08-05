@@ -113,7 +113,12 @@ public class DependencyMapServiceTests
     {
         public Task<bool> RepositoryExistsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult(true);
         public Task<IReadOnlyList<RepositoryFile>> GetManifestsAsync(ManagedRepository r, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<RepositoryFile>>([new RepositoryFile("Directory.Packages.props", manifest)]);
+            => Task.FromResult<IReadOnlyList<RepositoryFile>>([new RepositoryFile("/Directory.Packages.props", manifest)]);
+
+        // Write ops are unused by dependency-map analysis.
+        public Task<string?> GetBranchHeadAsync(ManagedRepository r, string branch, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        public Task PushFilesAsync(ManagedRepository r, string branch, string baseCommitId, IReadOnlyList<FileChange> changes, string message, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<string> EnsurePullRequestAsync(ManagedRepository r, string s, string t, string title, string desc, CancellationToken ct = default) => Task.FromResult("");
     }
 
     private sealed class FakeResolver(IReadOnlyDictionary<string, string?> latest) : IFeedVersionResolver

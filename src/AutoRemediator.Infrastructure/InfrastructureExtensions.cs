@@ -5,6 +5,7 @@ using AutoRemediator.Infrastructure.AzureDevOps;
 using AutoRemediator.Infrastructure.Configuration;
 using AutoRemediator.Infrastructure.Feeds;
 using AutoRemediator.Infrastructure.Messaging;
+using AutoRemediator.Infrastructure.Remediation;
 using AutoRemediator.Infrastructure.Storage;
 using Azure.Core;
 using Azure.Data.Tables;
@@ -58,9 +59,10 @@ public static class InfrastructureExtensions
         builder.Services.AddSingleton<IMessagePublisher, ServiceBusMessagePublisher>();
         builder.Services.AddSingleton<IMessageConsumer, ServiceBusMessageConsumer>();
 
-        // Configuration stores (managed repositories + global targeting settings).
+        // Configuration + run-history stores.
         builder.Services.AddSingleton<IManagedRepositoryStore, TableManagedRepositoryStore>();
         builder.Services.AddSingleton<ITargetingSettingsStore, TableTargetingSettingsStore>();
+        builder.Services.AddSingleton<IRemediationRunStore, TableRemediationRunStore>();
 
         // Azure DevOps connectivity (read-only REST) + PAT Basic auth.
         builder.Services.AddOptions<AzureDevOpsOptions>()
@@ -77,9 +79,13 @@ public static class InfrastructureExtensions
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", basic);
         });
 
-        // Feed version resolution + dependency-map analysis.
+        // Feed version resolution + analysis + planning + remediation.
         builder.Services.AddSingleton<IFeedVersionResolver, FeedVersionResolver>();
+        builder.Services.AddScoped<IRepositoryAnalyzer, RepositoryAnalyzer>();
         builder.Services.AddScoped<IDependencyMapService, DependencyMapService>();
+        builder.Services.AddScoped<IUpdatePlanner, UpdatePlanner>();
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddScoped<IRemediationRunner, RemediationRunner>();
 
         return builder;
     }

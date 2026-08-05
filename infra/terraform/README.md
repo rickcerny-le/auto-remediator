@@ -105,8 +105,12 @@ value. After `terraform apply`, set it once:
 az keyvault secret set \
   --vault-name "$(terraform output -raw key_vault_name)" \
   --name "AzureDevOps--Pat" \
-  --value "<your-azure-devops-pat>"   # Code:Read + Packaging:Read
+  --value "<your-azure-devops-pat>"   # Code: Read & Write, Pull Request: contribute, Packaging: Read
 ```
+
+> The PAT needs **Code (Read & Write)** and **Pull Request (contribute)** for the
+> remediation worker to push the `autoremediator/dependency-updates` branch and open
+> PRs (Slice 2), plus **Packaging (Read)** to resolve feed versions.
 
 Also set `AzureDevOps:OrganizationUrl` (e.g. `https://dev.azure.com/Orion180`) as an app
 setting (or a `AzureDevOps--OrganizationUrl` Key Vault secret). Locally, supply both via

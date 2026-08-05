@@ -1,6 +1,3 @@
-using System.Collections.Concurrent;
-using AutoRemediator.Agents;
-using AutoRemediator.Contracts.Messages;
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Configuration;
 using AutoRemediator.Infrastructure.Messaging;
@@ -47,17 +44,6 @@ internal sealed class SingleMessageConsumer(string body) : IMessageConsumer
     {
         await handler(body, cancellationToken);
         _completed.TrySetResult();
-    }
-}
-
-internal sealed class RecordingAgent : IRemediationAgent
-{
-    public ConcurrentBag<RemediationRunRequested> Received { get; } = [];
-
-    public Task<RemediationOutcome> RemediateAsync(RemediationRunRequested run, CancellationToken cancellationToken = default)
-    {
-        Received.Add(run);
-        return Task.FromResult(new RemediationOutcome(true, "recorded"));
     }
 }
 
