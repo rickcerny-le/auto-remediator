@@ -6,15 +6,19 @@ Defines how the system computes version bumps for matched outdated packages and 
 
 ## Requirements
 
-### Requirement: Compute version bumps for matched outdated packages
-For a repository, the system SHALL compute the set of updates to apply as exactly the matched packages (per the configured patterns) whose pinned version is outdated relative to the resolved latest — each update being `{package id, from version, to version}`. Packages with unknown current or latest versions SHALL be skipped, and only matched packages SHALL be considered (no third-party or unmatched packages in this slice).
+### Requirement: Compute version bumps to the policy target
+For a repository, the system SHALL compute the set of updates to apply as the matched packages whose current version is outdated relative to their **policy target** — each update being `{package id, from version, to (policy target) version}`. Packages that are ignored, up to date under policy, or of unknown version SHALL be skipped, and only matched packages SHALL be considered (no third-party or unmatched packages, and no collateral/sibling bumps in this slice).
 
-#### Scenario: Only matched outdated packages become updates
-- **WHEN** the updates are computed for a repository whose manifest contains an outdated `Orion180.Core`, an up-to-date `Orion180.Data`, and an outdated `Newtonsoft.Json`
-- **THEN** the update set contains only `Orion180.Core` (from its pinned version to the latest), and excludes the up-to-date and unmatched packages
+#### Scenario: Bump targets the policy version
+- **WHEN** updates are computed for a repository with an outdated matched `Orion180.Core` and a `Minor` strategy
+- **THEN** the update targets the highest version within the current major (the policy target), not necessarily the absolute latest
+
+#### Scenario: Ignored packages are excluded from updates
+- **WHEN** an outdated matched package matches an ignore glob
+- **THEN** it is not included in the update set and no manifest change is produced for it
 
 #### Scenario: Nothing to do yields an empty update set
-- **WHEN** no matched package is outdated
+- **WHEN** no matched package is outdated relative to its policy target
 - **THEN** the computed update set is empty
 
 ### Requirement: Produce edited manifest contents
