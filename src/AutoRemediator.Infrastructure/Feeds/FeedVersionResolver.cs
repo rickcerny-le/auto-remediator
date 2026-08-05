@@ -8,10 +8,15 @@ using NuGet.Versioning;
 
 namespace AutoRemediator.Infrastructure.Feeds;
 
-/// <summary>Resolves the latest available version of a package from configured feeds.</summary>
+/// <summary>Resolves the versions of a package available across the configured feeds.</summary>
 public interface IFeedVersionResolver
 {
-    Task<string?> GetLatestVersionAsync(
+    /// <summary>
+    /// Returns the distinct versions of <paramref name="packageId"/> available across
+    /// <paramref name="feeds"/> as normalized version strings, excluding pre-release unless
+    /// <paramref name="allowPrerelease"/> is set. Empty when nothing is found.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetVersionsAsync(
         string packageId,
         IReadOnlyList<string> feeds,
         bool allowPrerelease,
@@ -20,34 +25,32 @@ public interface IFeedVersionResolver
 
 /// <summary>
 /// NuGet.Protocol-based resolver. Authenticates to each (private) feed with the Azure
-/// DevOps PAT and returns the highest version across feeds, excluding pre-release unless
-/// allowed. Feed failures are swallowed per-feed so one bad source does not fail analysis.
+/// DevOps PAT. Feed failures are swallowed per-feed so one bad source does not fail analysis.
 /// </summary>
 internal sealed class FeedVersionResolver(IOptions<AzureDevOpsOptions> options) : IFeedVersionResolver
 {
     private readonly string _pat = options.Value.Pat ?? string.Empty;
 
-    public async Task<string?> GetLatestVersionAsync(
+    public async Task<IReadOnlyList<string>> GetVersionsAsync(
         string packageId,
         IReadOnlyList<string> feeds,
         bool allowPrerelease,
         CancellationToken cancellationToken = default)
     {
-        NuGetVersion? best = null;
+        var versions = new HashSet<NuGetVersion>();
 
         foreach (var feed in feeds)
         {
-            var candidate = await GetHighestFromFeedAsync(packageId, feed, allowPrerelease, cancellationToken);
-            if (candidate is not null && (best is null || candidate > best))
+            foreach (var version in await GetFeedVersionsAsync(packageId, feed, allowPrerelease, cancellationToken))
             {
-                best = candidate;
+                versions.Add(version);
             }
         }
 
-        return best?.ToNormalizedString();
+        return versions.Select(v => v.ToNormalizedString()).ToList();
     }
 
-    private async Task<NuGetVersion?> GetHighestFromFeedAsync(
+    private async Task<IReadOnlyList<NuGetVersion>> GetFeedVersionsAsync(
         string packageId,
         string feed,
         bool allowPrerelease,
@@ -65,15 +68,13 @@ internal sealed class FeedVersionResolver(IOptions<AzureDevOpsOptions> options) 
             var resource = await repository.GetResourceAsync<FindPackageByIdResource>(cancellationToken);
             using var cache = new SourceCacheContext();
 
-            var versions = await resource.GetAllVersionsAsync(packageId, cache, NullLogger.Instance, cancellationToken);
-
-            var candidates = versions.Where(v => allowPrerelease || !v.IsPrerelease).ToList();
-            return candidates.Count == 0 ? null : candidates.Max();
+            var all = await resource.GetAllVersionsAsync(packageId, cache, NullLogger.Instance, cancellationToken);
+            return all.Where(v => allowPrerelease || !v.IsPrerelease).ToList();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // A single feed failing must not fail the whole analysis pass.
-            return null;
+            return [];
         }
     }
 }

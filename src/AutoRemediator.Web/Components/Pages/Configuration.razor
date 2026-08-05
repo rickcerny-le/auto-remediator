@@ -27,6 +27,10 @@
         <label class="form-label">Feeds</label>
         <input class="form-control" @bind="_feeds" placeholder="https://pkgs.dev.azure.com/Orion180/..." />
     </div>
+    <div class="col-12">
+        <label class="form-label">Ignore (globs, held from updates)</label>
+        <input class="form-control" data-testid="ignore" @bind="_ignore" placeholder="Orion180.Legacy.*" />
+    </div>
     <div class="col-6">
         <label class="form-label">Strategy</label>
         <select class="form-select" @bind="_strategy">
@@ -85,6 +89,7 @@ else
     private string _patterns = "";
     private string _excludes = "";
     private string _feeds = "";
+    private string _ignore = "";
     private string _strategy = "Minor";
     private bool _allowPrerelease;
 
@@ -111,6 +116,7 @@ else
                 _patterns = string.Join(", ", s.Patterns);
                 _excludes = string.Join(", ", s.Excludes);
                 _feeds = string.Join(", ", s.Feeds);
+                _ignore = string.Join(", ", s.Ignore);
                 _strategy = s.Strategy;
                 _allowPrerelease = s.AllowPrerelease;
             }
@@ -127,7 +133,7 @@ else
     private async Task SaveSettingsAsync()
     {
         var dto = new TargetingSettingsDto(
-            Split(_patterns), Split(_excludes), Split(_feeds), _strategy, [], _allowPrerelease);
+            Split(_patterns), Split(_excludes), Split(_feeds), _strategy, Split(_ignore), _allowPrerelease);
         var response = await Api.PutAsJsonAsync("api/settings", dto);
         _status = response.IsSuccessStatusCode ? "Settings saved." : $"Save failed ({(int)response.StatusCode}).";
     }

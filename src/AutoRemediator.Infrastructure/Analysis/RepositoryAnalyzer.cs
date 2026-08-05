@@ -31,7 +31,7 @@ internal sealed class RepositoryAnalyzer(
     public async Task<RepositoryAnalysis> AnalyzeAsync(ManagedRepository repository, TargetingSettings settings, CancellationToken cancellationToken = default)
     {
         var manifests = await azureDevOps.GetManifestsAsync(repository, cancellationToken);
-        var latestCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var versionsCache = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         var analyzed = new List<AnalyzedManifest>();
 
         foreach (var manifest in manifests)
@@ -42,13 +42,7 @@ internal sealed class RepositoryAnalyzer(
             var packages = new List<AnalyzedPackage>();
             foreach (var package in matched)
             {
-                if (!latestCache.TryGetValue(package.Id, out var latest))
-                {
-                    latest = await feedVersions.GetLatestVersionAsync(package.Id, settings.Feeds, settings.Policy.AllowPrerelease, cancellationToken);
-                    latestCache[package.Id] = latest;
-                }
-
-                packages.Add(new AnalyzedPackage(package.Id, package.Version, latest, ComputeStatus(package.Version, latest)));
+                packages.Add(await AnalyzePackageAsync(package, settings, versionsCache, cancellationToken));
             }
 
             analyzed.Add(new AnalyzedManifest(manifest.Path, manifest.Content, packages));
@@ -57,15 +51,45 @@ internal sealed class RepositoryAnalyzer(
         return new RepositoryAnalysis(analyzed);
     }
 
-    private static DependencyStatus ComputeStatus(string? current, string? latest)
+    private async Task<AnalyzedPackage> AnalyzePackageAsync(
+        DeclaredPackage package,
+        TargetingSettings settings,
+        Dictionary<string, IReadOnlyList<string>> versionsCache,
+        CancellationToken cancellationToken)
     {
-        if (current is null || latest is null
-            || !NuGetVersion.TryParse(current, out var currentVersion)
-            || !NuGetVersion.TryParse(latest, out var latestVersion))
+        // Held by the ignore list — shown but never targeted; no feed lookup.
+        if (PackagePatternMatcher.IsMatch(package.Id, settings.Policy.Ignore, []))
         {
-            return DependencyStatus.Unknown;
+            return new AnalyzedPackage(package.Id, package.Version, LatestVersion: null, DependencyStatus.Ignored);
         }
 
-        return currentVersion < latestVersion ? DependencyStatus.Outdated : DependencyStatus.UpToDate;
+        if (!versionsCache.TryGetValue(package.Id, out var versions))
+        {
+            versions = await feedVersions.GetVersionsAsync(package.Id, settings.Feeds, settings.Policy.AllowPrerelease, cancellationToken);
+            versionsCache[package.Id] = versions;
+        }
+
+        if (package.Version is null || !NuGetVersion.TryParse(package.Version, out var current))
+        {
+            return new AnalyzedPackage(package.Id, package.Version, LatestVersion: null, DependencyStatus.Unknown);
+        }
+
+        var available = versions
+            .Select(v => NuGetVersion.TryParse(v, out var parsed) ? parsed : null)
+            .Where(v => v is not null)!
+            .Cast<NuGetVersion>()
+            .ToList();
+
+        // No versions resolved from the feed — latest is undeterminable.
+        if (available.Count == 0)
+        {
+            return new AnalyzedPackage(package.Id, package.Version, LatestVersion: null, DependencyStatus.Unknown);
+        }
+
+        var target = VersionPolicy.SelectTarget(current, available, settings.Policy.Strategy);
+
+        return target is null
+            ? new AnalyzedPackage(package.Id, package.Version, LatestVersion: null, DependencyStatus.UpToDate)
+            : new AnalyzedPackage(package.Id, package.Version, target.ToNormalizedString(), DependencyStatus.Outdated);
     }
 }

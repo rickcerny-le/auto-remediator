@@ -9,6 +9,9 @@ public enum DependencyStatus
     /// <summary>Pinned version equals the latest available.</summary>
     UpToDate,
 
+    /// <summary>Matched but held by the ignore list — never targeted for an update.</summary>
+    Ignored,
+
     /// <summary>Version could not be determined (unresolved manifest version or feed lookup failure).</summary>
     Unknown,
 }

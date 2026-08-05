@@ -73,7 +73,9 @@ Decisions:
 | 2 | **update-execution** | bump matched outdated packages, edit manifest text (no clone/build); validation delegated to the repo's ADO CI on the PR | *(new)* |
 | 2 | **pull-request-authoring** | branch/commit + PR with a change summary | *(part of the ADO client)* |
 | 2 | **run-orchestration** | per-run state machine, status/history/artifacts persistence, idempotency (one open PR per repo/update-set), retries | remediation worker body |
-| 5 | **ai-remediation-loop** | MAF + Foundry agent: build/test errors + diff → fixes (code and/or extra bumps) → re-run, budget-bounded | `MafRemediationAgent` placeholder |
+| 3 | **update-policy** | target-version selection by strategy (patch/minor/major relative to current) + ignore list; needs no build signal | *(new; wires existing `UpdatePolicy` fields into version selection)* |
+| 3b | **dependency-graph-alignment** *(collateral, split out)* | when a matched bump forces bumping its `Orion180.*` siblings — resolved from feed dependency metadata (local-first), not a local build | *(new; deliberate signal choice — see below)* |
+| 5 | **ai-remediation-loop** | MAF + Foundry agent for **compile/API** breaks (source edits) — the class version math can't fix | `MafRemediationAgent` placeholder |
 | 6 | **run-observability-ui** | run history, live status, drill into logs/diffs/AI transcript, retry | *(new)* |
 
 Cross-cutting **secrets-and-identity** (ADO PAT/Entra + private-feed credentials) gates
@@ -112,10 +114,31 @@ connectivity; settle it inside the Slice-1 connectivity work (may become its own
            ▶ bump matched Orion180.* to latest, open a PR; the repo's ADO CI
              validates it (no local build, no AI)
 
-  Slice 3  DEPTH       policy (patch/minor/major, ignore) + collateral bumps to pass the build
-  Slice 4  TESTS       run tests; classify build-break vs test-break
-  Slice 5  AI LOOP     the MAF agent — now fed by real build failures
+  Slice 3  POLICY      update strategy (patch/minor/major) + ignore list; no build
+                       signal needed — pure version selection
+  Slice 3b COLLATERAL  intra-family alignment: bumping one Orion180.* forces
+                       compatible bumps of its siblings, resolved from feed
+                       dependency metadata (local-first, no build)
+  Slice 5  AI LOOP     the MAF agent for compile/API breaks (source edits)
   Slice 6  UI          full run history / logs / transcripts / retry
+```
+
+> **Note on the collateral split (decided during exploration):** "collateral bumps
+> to pass the build" conflated two breakage classes. RESTORE-TIME conflicts (a bumped
+> package's declared dependencies clash with other pins) are **version math** — for an
+> internal family this is aligning the `Orion180.*` set, computable from feed metadata
+> with no build (Slice 3b). COMPILE-TIME / API breaks need source edits — that is the
+> AI loop (Slice 5). Slice 2's "no local build" removed the signal for both, but they
+> need different (and cheaper) signals. The old Slice-4 "run tests / classify breakage"
+> is folded away: local build/test (Option A) is only revisited if the metadata + CI
+> path proves insufficient.
+
+```
+   COLLATERAL SIGNAL SPECTRUM (chosen when Slice 3b is proposed):
+   metadata-only ───── restore-only ───── full build ───── CI-feedback
+   (align family from  (dotnet restore;   (Option A;       (poll the PR's
+    feed deps; local)   SDK⊂build)         SDK/git)         ADO CI, async)
+   ↑ most local-first, fits the run-everything-locally goal
 ```
 
 ## Domain shape (locked in at Slice 1)

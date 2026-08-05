@@ -41,6 +41,26 @@ public class UpdatePlannerTests
     }
 
     [Fact]
+    public async Task Ignored_package_is_not_planned()
+    {
+        var analysis = new RepositoryAnalysis(
+        [
+            new AnalyzedManifest("/Directory.Packages.props", Manifest,
+            [
+                new AnalyzedPackage("Orion180.Core", "1.0.0", "2.0.0", DependencyStatus.Outdated),
+                new AnalyzedPackage("Orion180.Data", "2.0.0", null, DependencyStatus.Ignored),
+            ]),
+        ]);
+
+        var plan = await PlanAsync(analysis);
+
+        var update = Assert.Single(plan.Updates);
+        Assert.Equal("Orion180.Core", update.PackageId);
+        // The ignored package's version is untouched in the edited manifest.
+        Assert.Contains("""Include="Orion180.Data" Version="2.0.0" """, Assert.Single(plan.ChangedManifests).NewContent);
+    }
+
+    [Fact]
     public async Task Nothing_outdated_yields_empty_plan()
     {
         var analysis = new RepositoryAnalysis(
