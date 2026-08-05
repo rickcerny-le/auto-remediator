@@ -2,24 +2,28 @@
 
 ## Purpose
 
-Defines the read-only Azure DevOps client behind an abstraction: authenticating to a configured organization with a PAT sourced from Azure Key Vault (with local user-secrets fallback), verifying repositories, discovering dependency manifests, and reading file contents — with no write operations in scope.
+Defines the Azure DevOps client behind an abstraction: authenticating to a configured organization with a PAT sourced from Azure Key Vault (with local user-secrets fallback), verifying repositories, discovering dependency manifests, reading file contents, and performing the write operations required for remediation — pushing commits to a branch and creating or finding pull requests via the REST API without cloning.
 
 ## Requirements
 
-### Requirement: Authenticated read-only Azure DevOps client
-The system SHALL provide an Azure DevOps client, behind an abstraction, that authenticates to a configured organization and performs read-only operations: verifying a repository exists and reading file contents from a repository's default branch. It SHALL NOT perform any write operation (no branch, commit, or pull request) in this capability.
+### Requirement: Authenticated Azure DevOps client
+The system SHALL provide an Azure DevOps client, behind an abstraction, that authenticates to a configured organization and performs both read operations — verifying a repository exists and reading file contents/manifests — and the write operations required for remediation: pushing a commit of changed files to a branch (creating the branch from the target branch head when absent), and creating or finding a pull request. Writes are performed via the Azure DevOps REST API without cloning the repository.
 
 #### Scenario: Read a manifest file from a repository
 - **WHEN** the client is asked for the contents of `Directory.Packages.props` in a configured repository
-- **THEN** it returns the file's text from the default branch, or a not-found result if the file is absent
+- **THEN** it returns the file's text from the target branch, or a not-found result if the file is absent
 
 #### Scenario: Verify a configured repository exists
 - **WHEN** a configured repository is checked against Azure DevOps
 - **THEN** the client reports whether that org/project/repository is reachable
 
-#### Scenario: No write operations are exposed
-- **WHEN** the connectivity abstraction is inspected
-- **THEN** it exposes only read operations; creating branches/commits/PRs is out of scope here
+#### Scenario: Push a commit to a branch
+- **WHEN** the client is asked to push edited manifests to `autoremediator/dependency-updates`
+- **THEN** it creates the branch from the target branch head if it does not exist and commits the changed files, or updates the branch if it already exists — without cloning the repository
+
+#### Scenario: Create or find a pull request
+- **WHEN** the client is asked to ensure a pull request from the branch into the target branch
+- **THEN** it returns the existing active pull request if one exists, otherwise it creates one and returns it
 
 ### Requirement: PAT sourced from Key Vault with local fallback
 The Azure DevOps credential (a PAT) SHALL be read from configuration, sourced from Azure Key Vault via managed identity when running in Azure and from user-secrets (or equivalent local configuration) during local development. The PAT SHALL NOT be committed to source or stored in Terraform state.
