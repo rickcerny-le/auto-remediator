@@ -1,12 +1,164 @@
 @page "/"
-@using AutoRemediator.Web.Client.Components
+@using System.Net.Http.Json
+@using AutoRemediator.Contracts.Dtos
+@inject IHttpClientFactory HttpFactory
+@inject NavigationManager Nav
 
-<PageTitle>Auto Dependency Remediator</PageTitle>
+<PageTitle>Overview · AutoRemediator</PageTitle>
 
-<h1>Auto Dependency Remediator</h1>
+<div class="d-flex align-center mb-5">
+    <div>
+        <MudText Typo="Typo.h5" Style="font-weight:650;letter-spacing:-.01em;">Overview</MudText>
+        <MudText Typo="Typo.caption" Class="ar-mono" Style="color:var(--mud-palette-text-secondary);">automated dependency remediation</MudText>
+    </div>
+    <MudSpacer />
+    <MudButton Href="/configuration" Variant="Variant.Outlined" Color="Color.Default" StartIcon="@Icons.Material.Filled.Add" Class="mr-2">Add repo</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="Refresh" Disabled="_loading">Refresh</MudButton>
+</div>
 
-<p data-testid="tagline">
-    Automated dependency updates with AI-assisted breaking-change remediation for Azure DevOps.
-</p>
+<MudGrid Class="mb-2">
+    <MudItem xs="6" md="3">
+        <MudPaper Class="ar-kpi pa-4" Elevation="1">
+            <div class="ar-label">Managed repos</div>
+            <div class="ar-val ar-mono">@_repoCount</div>
+            <div class="ar-sub">enrolled for remediation</div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" md="3">
+        <MudPaper Class="ar-kpi pa-4" Elevation="1">
+            <div class="ar-label">Runs</div>
+            <div class="ar-val ar-mono">@_runCount</div>
+            <div class="ar-sub"><span class="ar-mono" style="color:var(--mud-palette-error)">@_failedCount</span> failed</div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" md="3">
+        <MudPaper Class="ar-kpi pa-4" Elevation="1">
+            <div class="ar-label">Open PRs</div>
+            <div class="ar-val ar-mono accent">@_prCount</div>
+            <div class="ar-sub">opened by AutoRemediator</div>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" md="3">
+        <MudPaper Class="ar-kpi pa-4" Elevation="1">
+            <div class="ar-label">Strategy</div>
+            <div class="ar-val ar-mono" style="font-size:22px;margin-top:12px;">@(_strategy ?? "—")</div>
+            <div class="ar-sub">update policy</div>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
 
-<RemediationPing />
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Elevation="1">
+            <div class="d-flex align-center pa-4" style="border-bottom:1px solid var(--mud-palette-lines-default);">
+                <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Recent runs</MudText>
+                <MudSpacer />
+                <MudLink Href="/runs" Style="font-size:13px;">View all →</MudLink>
+            </div>
+            <MudTable Items="_recentRuns" Dense="true" Hover="true" Class="ar-table" Elevation="0"
+                      OnRowClick="OnRunClick" T="RunSummaryDto" Loading="_loading">
+                <HeaderContent>
+                    <MudTh>Repository</MudTh><MudTh>Status</MudTh><MudTh Style="text-align:right">Updates</MudTh><MudTh>PR</MudTh><MudTh Style="text-align:right">Started</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Repository"><span class="ar-mono">@Short(context.RepositorySlug)</span></MudTd>
+                    <MudTd DataLabel="Status">
+                        <span class="ar-pill @PillClass(context.Status)"><span class="ar-dot"></span>@Human(context.Status)</span>
+                    </MudTd>
+                    <MudTd DataLabel="Updates" Style="text-align:right"><span class="ar-mono">@context.UpdateCount</span></MudTd>
+                    <MudTd DataLabel="PR">
+                        @if (context.PullRequestUrl is not null)
+                        {
+                            <MudLink Href="@context.PullRequestUrl" Target="_blank" Class="ar-mono" OnClick:stopPropagation="true">open</MudLink>
+                        }
+                        else { <span class="ar-mono" style="color:var(--mud-palette-text-disabled)">—</span> }
+                    </MudTd>
+                    <MudTd DataLabel="Started" Style="text-align:right"><span class="ar-mono" style="color:var(--mud-palette-text-secondary)">@context.StartedAtUtc.LocalDateTime.ToString("g")</span></MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText>No runs yet.</MudText></NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="4">
+        <MudPaper Elevation="1" Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Style="font-weight:600;" Class="mb-3">Targeting</MudText>
+            <div class="d-flex align-center justify-space-between py-2" style="border-bottom:1px solid var(--mud-palette-lines-default);">
+                <span class="ar-label">Patterns</span>
+                <span class="ar-mono" style="color:var(--mud-palette-success)">@(_patterns ?? "—")</span>
+            </div>
+            <div class="d-flex align-center justify-space-between py-2" style="border-bottom:1px solid var(--mud-palette-lines-default);">
+                <span class="ar-label">Feeds</span>
+                <span class="ar-mono">@(_feeds ?? "—")</span>
+            </div>
+            <div class="d-flex align-center justify-space-between py-2" style="border-bottom:1px solid var(--mud-palette-lines-default);">
+                <span class="ar-label">Ignore</span>
+                <span class="ar-mono">@(_ignore ?? "none")</span>
+            </div>
+            <div class="d-flex align-center justify-space-between py-2">
+                <span class="ar-label">Strategy</span>
+                <span class="ar-pill info"><span class="ar-dot"></span>@(_strategy ?? "—")</span>
+            </div>
+            <MudButton Href="/configuration" Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" Class="mt-2">Edit configuration →</MudButton>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private int _repoCount, _runCount, _failedCount, _prCount;
+    private List<RunSummaryDto> _recentRuns = [];
+    private string? _patterns, _feeds, _ignore, _strategy;
+    private bool _loading = true;
+
+    protected override Task OnInitializedAsync() => Refresh();
+
+    private HttpClient Api => HttpFactory.CreateClient("api");
+
+    private async Task Refresh()
+    {
+        _loading = true;
+        try
+        {
+            var repos = await Api.GetFromJsonAsync<List<ManagedRepositoryDto>>("api/repositories") ?? [];
+            var runs = await Api.GetFromJsonAsync<List<RunSummaryDto>>("api/runs") ?? [];
+            var settings = await Api.GetFromJsonAsync<TargetingSettingsDto>("api/settings");
+
+            _repoCount = repos.Count;
+            _runCount = runs.Count;
+            _failedCount = runs.Count(r => r.Status == "Failed");
+            _prCount = runs.Count(r => !string.IsNullOrEmpty(r.PullRequestUrl));
+            _recentRuns = runs.Take(6).ToList();
+
+            _patterns = settings is { Patterns.Count: > 0 } ? string.Join(", ", settings.Patterns) : null;
+            _feeds = settings is { Feeds.Count: > 0 } ? string.Join(", ", settings.Feeds) : null;
+            _ignore = settings is { Ignore.Count: > 0 } ? string.Join(", ", settings.Ignore) : "none";
+            _strategy = settings?.Strategy;
+        }
+        catch
+        {
+            // Best-effort dashboard; empty state renders if the API is unreachable.
+        }
+        finally { _loading = false; }
+    }
+
+    private void OnRunClick(TableRowClickEventArgs<RunSummaryDto> args)
+    {
+        if (args.Item is not null) Nav.NavigateTo($"/runs/{args.Item.Id}");
+    }
+
+    private static string Short(string slug)
+    {
+        var i = slug.LastIndexOf('/');
+        return i >= 0 ? slug[(i + 1)..] : slug;
+    }
+
+    private static string Human(string status) => status == "NoUpdates" ? "No updates" : status;
+
+    private static string PillClass(string status) => status switch
+    {
+        "Completed" => "ok",
+        "Failed" => "bad",
+        "NoUpdates" => "mute",
+        _ => "run",
+    };
+}

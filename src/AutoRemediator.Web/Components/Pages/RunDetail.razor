@@ -1,0 +1,105 @@
+@page "/runs/{Id:guid}"
+@using System.Net.Http.Json
+@using AutoRemediator.Contracts.Dtos
+@inject IHttpClientFactory HttpFactory
+
+<PageTitle>Run detail</PageTitle>
+
+<div class="d-flex align-center mb-4">
+    <MudButton Href="/runs" StartIcon="@Icons.Material.Filled.ArrowBack" Variant="Variant.Text">Runs</MudButton>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Disabled="_loading">Refresh</MudButton>
+</div>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Warning" data-testid="run-error">@_error</MudAlert>
+}
+else if (_run is null)
+{
+    <MudText><em>Loading…</em></MudText>
+}
+else
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <div class="d-flex align-center gap-3 mb-2">
+            <MudText Typo="Typo.h6" Class="ar-mono">@_run.RepositorySlug</MudText>
+            <span class="ar-pill @PillClass(_run.Status)"><span class="ar-dot"></span>@Human(_run.Status)</span>
+        </div>
+        <MudText Typo="Typo.body2">Started: @_run.StartedAtUtc.LocalDateTime.ToString("g")@(_run.FinishedAtUtc is null ? "" : $" · Finished: {_run.FinishedAtUtc.Value.LocalDateTime:g}")</MudText>
+        @if (_run.PullRequestUrl is not null)
+        {
+            <MudLink Href="@_run.PullRequestUrl" Target="_blank">Pull request</MudLink>
+        }
+        @if (_run.Error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2" data-testid="run-error-message">@_run.Error</MudAlert>
+        }
+    </MudPaper>
+
+    <MudTable Items="_run.Updates" Dense="true" Hover="true" data-testid="run-updates">
+        <HeaderContent>
+            <MudTh>Package</MudTh><MudTh>From</MudTh><MudTh>To</MudTh><MudTh>Kind</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Package"><span class="ar-mono">@context.PackageId</span></MudTd>
+            <MudTd DataLabel="From"><span class="ar-mono ar-from">@context.FromVersion</span></MudTd>
+            <MudTd DataLabel="To"><span class="ar-mono ar-to">@context.ToVersion</span></MudTd>
+            <MudTd DataLabel="Kind">
+                <span class="ar-pill @(context.Kind == "Collateral" ? "info" : "ok")"><span class="ar-dot"></span>@context.Kind.ToLowerInvariant()</span>
+                @if (context.BeyondPolicy)
+                {
+                    <span class="ar-tag">beyond policy</span>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText>No updates in this run.</MudText></NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private RunDetailDto? _run;
+    private bool _loading;
+    private string? _error;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var response = await HttpFactory.CreateClient("api").GetAsync($"api/runs/{Id}");
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _error = "Run not found.";
+                _run = null;
+            }
+            else
+            {
+                _run = await response.Content.ReadFromJsonAsync<RunDetailDto>();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load run: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Human(string status) => status == "NoUpdates" ? "No updates" : status;
+
+    private static string PillClass(string status) => status switch
+    {
+        "Completed" => "ok",
+        "Failed" => "bad",
+        "NoUpdates" => "mute",
+        _ => "run",
+    };
+}

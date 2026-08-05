@@ -39,5 +39,11 @@ public class RemediationRunStoreRoundTripTests
         Assert.Equal(RunStatus.Completed, saved.Status);
         Assert.Equal("https://pr/1", saved.PullRequestUrl);
         Assert.Equal("Orion180.Core", Assert.Single(saved.Updates).PackageId);
+
+        // Global list and by-id lookup (used by the runs UI).
+        Assert.Contains(await store.ListAllAsync(ct), r => r.Id == run.Id);
+        var byId = await store.GetAsync(run.Id, ct);
+        Assert.NotNull(byId);
+        Assert.Equal(RunStatus.Completed, byId!.Status);
     }
 }

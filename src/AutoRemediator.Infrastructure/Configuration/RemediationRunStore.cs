@@ -11,6 +11,8 @@ public interface IRemediationRunStore
 {
     Task SaveAsync(RemediationRun run, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RemediationRun>> ListByRepositoryAsync(Guid repositoryId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<RemediationRun>> ListAllAsync(CancellationToken cancellationToken = default);
+    Task<RemediationRun?> GetAsync(Guid runId, CancellationToken cancellationToken = default);
 }
 
 internal sealed class RemediationRunEntity : ITableEntity
@@ -73,5 +75,31 @@ internal sealed class TableRemediationRunStore(ITableStore tableStore) : IRemedi
         }
 
         return results;
+    }
+
+    public async Task<IReadOnlyList<RemediationRun>> ListAllAsync(CancellationToken cancellationToken = default)
+    {
+        var table = await tableStore.GetTableAsync(TableName, cancellationToken);
+        var results = new List<RemediationRun>();
+
+        await foreach (var entity in table.QueryAsync<RemediationRunEntity>(cancellationToken: cancellationToken))
+        {
+            results.Add(entity.ToDomain());
+        }
+
+        return results;
+    }
+
+    public async Task<RemediationRun?> GetAsync(Guid runId, CancellationToken cancellationToken = default)
+    {
+        var table = await tableStore.GetTableAsync(TableName, cancellationToken);
+
+        await foreach (var entity in table.QueryAsync<RemediationRunEntity>(
+            e => e.RowKey == runId.ToString(), cancellationToken: cancellationToken))
+        {
+            return entity.ToDomain();
+        }
+
+        return null;
     }
 }

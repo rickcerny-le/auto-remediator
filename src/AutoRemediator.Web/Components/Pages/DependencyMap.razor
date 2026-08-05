@@ -1,55 +1,79 @@
 @page "/dependency-map"
-@rendermode InteractiveServer
 @using System.Net.Http.Json
 @using AutoRemediator.Contracts.Dtos
 @inject IHttpClientFactory HttpFactory
 
 <PageTitle>Dependency Map</PageTitle>
 
-<h1>Dependency Map</h1>
-<p>Matched packages across configured repositories and whether they are outdated.</p>
-
-<button class="btn btn-primary" data-testid="refresh-map" @onclick="LoadAsync" disabled="@_loading">
-    @(_loading ? "Loading…" : "Refresh")
-</button>
+<div class="d-flex align-center mb-4">
+    <MudText Typo="Typo.h5">Dependency Map</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+               OnClick="LoadAsync" Disabled="_loading" data-testid="refresh-map">
+        @(_loading ? "Loading…" : "Refresh")
+    </MudButton>
+</div>
 
 @if (_error is not null)
 {
-    <div class="alert alert-warning mt-3" data-testid="map-error">@_error</div>
+    <MudAlert Severity="Severity.Warning" data-testid="map-error">@_error</MudAlert>
 }
 else if (_map is null)
 {
-    <p class="mt-3"><em>Click Refresh to run analysis.</em></p>
-}
-else if (_map.Entries.Count == 0)
-{
-    <p class="mt-3" data-testid="map-empty">No matched packages found.</p>
+    <MudText Typo="Typo.body2"><em>Click Refresh to run analysis.</em></MudText>
 }
 else
 {
-    <table class="table mt-3" data-testid="map-table">
-        <thead>
-            <tr><th>Repository</th><th>Package</th><th>Current</th><th>Latest</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var e in _map.Entries)
-            {
-                <tr class="@(e.Status == "Outdated" ? "table-warning" : null)">
-                    <td>@e.RepositorySlug</td>
-                    <td>@e.PackageId</td>
-                    <td>@e.CurrentVersion</td>
-                    <td>@e.LatestVersion</td>
-                    <td>@e.Status</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <MudTable Items="_map.Entries" Dense="true" Hover="true" Bordered="false" data-testid="map-table">
+        <HeaderContent>
+            <MudTh>Repository</MudTh>
+            <MudTh>Package</MudTh>
+            <MudTh>Version</MudTh>
+            <MudTh>Status</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Repository"><span class="ar-mono">@Short(context.RepositorySlug)</span></MudTd>
+            <MudTd DataLabel="Package"><span class="ar-mono">@context.PackageId</span></MudTd>
+            <MudTd DataLabel="Version">
+                @if (context.Status == "Outdated" && context.LatestVersion is not null)
+                {
+                    <span class="ar-mono ar-from">@context.CurrentVersion</span><span class="ar-arrow ar-mono">→</span><span class="ar-mono ar-to">@context.LatestVersion</span>
+                }
+                else if (context.Status == "Ignored")
+                {
+                    <span class="ar-mono" style="color:var(--mud-palette-text-disabled)">@context.CurrentVersion · held</span>
+                }
+                else
+                {
+                    <span class="ar-mono">@(context.CurrentVersion ?? "unknown")</span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Status">
+                <span class="ar-pill @PillClass(context.Status)"><span class="ar-dot"></span>@context.Status</span>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText data-testid="map-empty">No matched packages found.</MudText></NoRecordsContent>
+    </MudTable>
 }
 
 @code {
     private DependencyMapDto? _map;
     private bool _loading;
     private string? _error;
+
+    private static string Short(string slug)
+    {
+        var i = slug.LastIndexOf('/');
+        return i >= 0 ? slug[(i + 1)..] : slug;
+    }
+
+    private static string PillClass(string status) => status switch
+    {
+        "Outdated" => "warn",
+        "UpToDate" => "ok",
+        "Ignored" => "mute",
+        _ => "info",
+    };
 
     private async Task LoadAsync()
     {

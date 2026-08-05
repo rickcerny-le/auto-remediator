@@ -150,5 +150,7 @@ public class RemediationRunnerTests
         public RemediationRun? Last { get; private set; }
         public Task SaveAsync(RemediationRun run, CancellationToken ct = default) { Last = run; return Task.CompletedTask; }
         public Task<IReadOnlyList<RemediationRun>> ListByRepositoryAsync(Guid repositoryId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RemediationRun>>([]);
+        public Task<IReadOnlyList<RemediationRun>> ListAllAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RemediationRun>>(Last is null ? [] : [Last]);
+        public Task<RemediationRun?> GetAsync(Guid runId, CancellationToken ct = default) => Task.FromResult(Last?.Id == runId ? Last : null);
     }
 }
