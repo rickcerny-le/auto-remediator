@@ -12,6 +12,7 @@
     <MudSelect T="string" @bind-Value="_status" Label="Status" Clearable="true" Style="max-width: 200px;" Class="mr-3" data-testid="status-filter">
         <MudSelectItem Value="@("Completed")">Completed</MudSelectItem>
         <MudSelectItem Value="@("NoUpdates")">NoUpdates</MudSelectItem>
+        <MudSelectItem Value="@("VerificationFailed")">Verification failed</MudSelectItem>
         <MudSelectItem Value="@("Failed")">Failed</MudSelectItem>
     </MudSelect>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
@@ -86,11 +87,18 @@ else
         }
     }
 
-    private static string Human(string status) => status == "NoUpdates" ? "No updates" : status;
+    private static string Human(string status) => status switch
+    {
+        "NoUpdates" => "No updates",
+        "VerificationFailed" => "Verification failed",
+        _ => status,
+    };
 
+    // VerificationFailed reads as a warning, not an error: the tool worked, the bump did not.
     private static string PillClass(string status) => status switch
     {
         "Completed" => "ok",
+        "VerificationFailed" => "warn",
         "Failed" => "bad",
         "NoUpdates" => "mute",
         _ => "run",

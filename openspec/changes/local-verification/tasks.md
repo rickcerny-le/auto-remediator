@@ -49,16 +49,16 @@
 
 ## 8. API and UI
 
-- [ ] 8.1 Extend the run detail DTO in `AutoRemediator.Contracts/Dtos/RunDtos.cs` with the verification outcome, diagnostics, and log link
-- [ ] 8.2 Surface it from the run detail endpoint in `AutoRemediator.Api/Features/Runs/RunsEndpoints.cs`
-- [ ] 8.3 Extend `RunsEndpointTests` for the verification fields on run detail
-- [ ] 8.4 Render the verification outcome on the Run detail page: classification, skip reason, diagnostics table (code, message, file, line), and the log link
-- [ ] 8.5 Style `VerificationFailed` distinctly from `Failed` in the runs feed and include it in the status filter
+- [x] 8.1 Extend the run detail DTO in `AutoRemediator.Contracts/Dtos/RunDtos.cs` with the verification outcome, diagnostics, and log link
+- [x] 8.2 Surface it from the run detail endpoint in `AutoRemediator.Api/Features/Runs/RunsEndpoints.cs`
+- [x] 8.3 Extend `RunsEndpointTests` for the verification fields on run detail
+- [x] 8.4 Render the verification outcome on the Run detail page: classification, skip reason, diagnostics table (code, message, file, line), and the log link
+- [x] 8.5 Style `VerificationFailed` distinctly from `Failed` in the runs feed and include it in the status filter
 
 ## 9. Container image
 
-- [ ] 9.1 Change the final stage of `src/AutoRemediator.Worker.Remediation/Dockerfile` to `mcr.microsoft.com/dotnet/sdk:10.0`
-- [ ] 9.2 Build the image and confirm `dotnet restore` is available inside it and the worker still starts
+- [x] 9.1 Change the final stage of `src/AutoRemediator.Worker.Remediation/Dockerfile` to `mcr.microsoft.com/dotnet/sdk:10.0`
+- [x] 9.2 Build the image and confirm `dotnet restore` is available inside it and the worker still starts
 
 ## 10. Verification of the whole slice
 

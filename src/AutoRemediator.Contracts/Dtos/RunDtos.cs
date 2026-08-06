@@ -18,6 +18,24 @@ public sealed record RunUpdateDto(
     string Kind,
     bool BeyondPolicy);
 
+/// <summary>A diagnostic from local verification, as shown on the run detail page.</summary>
+public sealed record RunDiagnosticDto(
+    string Code,
+    string Message,
+    string? Path,
+    int? Line,
+    int? Column);
+
+/// <summary>
+/// The local verification result for a run: `Verified`, `DependencyFailure` or `Skipped`, with the
+/// reason when skipped and a link to the full log.
+/// </summary>
+public sealed record RunVerificationDto(
+    string Classification,
+    string? SkipReason,
+    IReadOnlyList<RunDiagnosticDto> Diagnostics,
+    string? LogUrl);
+
 /// <summary>A remediation run's full detail.</summary>
 public sealed record RunDetailDto(
     Guid Id,
@@ -27,4 +45,5 @@ public sealed record RunDetailDto(
     DateTimeOffset? FinishedAtUtc,
     string? PullRequestUrl,
     string? Error,
-    IReadOnlyList<RunUpdateDto> Updates);
+    IReadOnlyList<RunUpdateDto> Updates,
+    RunVerificationDto? Verification = null);

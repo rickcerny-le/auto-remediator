@@ -37,6 +37,55 @@ else
         }
     </MudPaper>
 
+    @if (_run.Verification is { } verification)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1" data-testid="run-verification">
+            <div class="d-flex align-center gap-3 mb-2">
+                <MudText Typo="Typo.subtitle1">Local verification</MudText>
+                <span class="ar-pill @VerificationPill(verification.Classification)">
+                    <span class="ar-dot"></span>@VerificationLabel(verification.Classification)
+                </span>
+                <MudSpacer />
+                @if (verification.LogUrl is not null)
+                {
+                    <MudLink Href="@ApiUrl(verification.LogUrl)" Target="_blank" Class="ar-mono" data-testid="verification-log-link">full log</MudLink>
+                }
+            </div>
+
+            @if (verification.Classification == "Skipped")
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" data-testid="verification-skip-reason">
+                    Verification was skipped, so this change was not compiled: @verification.SkipReason
+                </MudAlert>
+            }
+            else if (verification.Classification == "Verified")
+            {
+                <MudText Typo="Typo.body2">
+                    <code>dotnet restore</code> and <code>dotnet build</code> both succeeded. Tests are run by the repository's own CI.
+                </MudText>
+            }
+
+            @if (verification.Diagnostics.Count > 0)
+            {
+                <MudTable Items="verification.Diagnostics" Dense="true" Hover="true" Class="mt-3" data-testid="verification-diagnostics">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh><MudTh>Location</MudTh><MudTh>Message</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Code"><span class="ar-mono">@context.Code</span></MudTd>
+                        <MudTd DataLabel="Location"><span class="ar-mono">@Location(context)</span></MudTd>
+                        <MudTd DataLabel="Message">@context.Message</MudTd>
+                    </RowTemplate>
+                </MudTable>
+
+                @* The run record keeps a bounded set of diagnostics; the log always has them all. *@
+                <MudText Typo="Typo.caption" Class="mt-2" data-testid="verification-diagnostics-note">
+                    A capped set of diagnostics is kept on the run — the full log has every one.
+                </MudText>
+            }
+        </MudPaper>
+    }
+
     <MudTable Items="_run.Updates" Dense="true" Hover="true" data-testid="run-updates">
         <HeaderContent>
             <MudTh>Package</MudTh><MudTh>From</MudTh><MudTh>To</MudTh><MudTh>Kind</MudTh>
@@ -93,13 +142,44 @@ else
         }
     }
 
-    private static string Human(string status) => status == "NoUpdates" ? "No updates" : status;
+    private static string Human(string status) => status switch
+    {
+        "NoUpdates" => "No updates",
+        "VerificationFailed" => "Verification failed",
+        _ => status,
+    };
 
+    // VerificationFailed reads as a warning, not an error: the tool worked, the bump did not.
     private static string PillClass(string status) => status switch
     {
         "Completed" => "ok",
+        "VerificationFailed" => "warn",
         "Failed" => "bad",
         "NoUpdates" => "mute",
         _ => "run",
     };
+
+    private static string VerificationLabel(string classification) => classification switch
+    {
+        "Verified" => "verified",
+        "DependencyFailure" => "rejected",
+        "Skipped" => "not verified",
+        _ => classification,
+    };
+
+    private static string VerificationPill(string classification) => classification switch
+    {
+        "Verified" => "ok",
+        "DependencyFailure" => "warn",
+        "Skipped" => "mute",
+        _ => "info",
+    };
+
+    private static string Location(RunDiagnosticDto d) => d.Path is null
+        ? "—"
+        : d.Line is null ? d.Path : $"{d.Path}:{d.Line}{(d.Column is null ? "" : $":{d.Column}")}";
+
+    /// <summary>The API-relative log URL resolved against the configured API client's base address.</summary>
+    private string ApiUrl(string relative) =>
+        new Uri(HttpFactory.CreateClient("api").BaseAddress!, relative.TrimStart('/')).ToString();
 }
