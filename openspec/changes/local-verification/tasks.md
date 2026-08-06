@@ -8,8 +8,8 @@
 
 ## 2. Persistence
 
-- [ ] 2.1 Persist the verification outcome in `RemediationRunStore` (classification, skip reason, bounded diagnostics, log reference), keeping entity size within Table Storage limits
-- [ ] 2.2 Extend `RemediationRunStoreRoundTripTests` to cover verified, dependency-failure, and skipped runs round-tripping with diagnostics and log reference intact
+- [x] 2.1 Persist the verification outcome in `RemediationRunStore` (classification, skip reason, bounded diagnostics, log reference), keeping entity size within Table Storage limits
+- [x] 2.2 Extend `RemediationRunStoreRoundTripTests` to cover verified, dependency-failure, and skipped runs round-tripping with diagnostics and log reference intact
 
 ## 3. Azure DevOps: tree download
 
