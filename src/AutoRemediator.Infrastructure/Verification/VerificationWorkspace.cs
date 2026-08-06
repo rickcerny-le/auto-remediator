@@ -32,6 +32,12 @@ public interface IVerificationWorkspace : IDisposable
     /// Azure DevOps-style rooted paths. Empty when the repository does not use lock files.
     /// </summary>
     Task<IReadOnlyList<FileChange>> LockFileChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// What to hand `dotnet restore`/`dotnet build`: the repository's solution when it has one,
+    /// otherwise every project. Empty when the tree contains nothing buildable.
+    /// </summary>
+    IReadOnlyList<string> BuildTargets { get; }
 }
 
 /// <summary>Creates a <see cref="IVerificationWorkspace"/> for a run.</summary>
@@ -100,7 +106,7 @@ internal sealed class VerificationWorkspaceFactory(
     {
         using var zip = new ZipArchive(archive, ZipArchiveMode.Read);
 
-        var prefix = CommonRootDirectory(zip);
+        var prefix = WrapperDirectory(zip);
 
         foreach (var entry in zip.Entries)
         {
@@ -128,8 +134,15 @@ internal sealed class VerificationWorkspaceFactory(
         }
     }
 
-    /// <summary>The single top-level directory shared by every entry (with trailing slash), or null.</summary>
-    private static string? CommonRootDirectory(ZipArchive zip)
+    /// <summary>
+    /// The wrapper directory the archive nests everything under, or null when there is none.
+    ///
+    /// Deliberately conservative: a single shared top-level directory is not enough, because plenty of
+    /// repositories keep all their content under one folder (`src/`), and stripping that would corrupt
+    /// every path. Only a directory whose name is not a recognizable source folder is treated as a
+    /// wrapper — getting this wrong silently relocates the tree.
+    /// </summary>
+    private static string? WrapperDirectory(ZipArchive zip)
     {
         string? candidate = null;
 
@@ -152,8 +165,20 @@ internal sealed class VerificationWorkspaceFactory(
             }
         }
 
-        return candidate;
+        if (candidate is null)
+        {
+            return null;
+        }
+
+        var name = candidate.TrimEnd('/');
+        return SourceDirectoryNames.Contains(name) ? null : candidate;
     }
+
+    /// <summary>Top-level folder names that belong to the repository rather than to the archive.</summary>
+    private static readonly HashSet<string> SourceDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "src", "source", "sources", "lib", "libs", "app", "apps", "test", "tests", "samples", "build", "eng", "tools",
+    };
 }
 
 internal sealed class VerificationWorkspace(string root) : IVerificationWorkspace
@@ -167,19 +192,70 @@ internal sealed class VerificationWorkspace(string root) : IVerificationWorkspac
 
     public IReadOnlyCollection<string> GeneratedPaths => _generated;
 
+    /// <summary>
+    /// A bare `dotnet restore` only works when the working directory holds exactly one project or
+    /// solution; plenty of repositories keep neither at the root, where it fails with MSB1003 for a
+    /// reason that has nothing to do with the bump. So the target is resolved explicitly: the
+    /// shallowest solution if there is one, otherwise every project.
+    /// </summary>
+    public IReadOnlyList<string> BuildTargets => _buildTargets ??= DiscoverBuildTargets();
+
+    private IReadOnlyList<string>? _buildTargets;
+
+    private IReadOnlyList<string> DiscoverBuildTargets()
+    {
+        if (!Directory.Exists(root))
+        {
+            return [];
+        }
+
+        var solutions = Directory
+            .EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+                        || f.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(Depth)
+            .ThenBy(f => f, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (solutions.Count > 0)
+        {
+            return [solutions[0]];
+        }
+
+        return Directory
+            .EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private int Depth(string path)
+        => Path.GetRelativePath(root, path).Count(c => c == Path.DirectorySeparatorChar || c == '/');
+
     public async Task<string?> ReadAsync(string repositoryRelativePath, CancellationToken cancellationToken = default)
     {
         var path = Resolve(repositoryRelativePath);
         return File.Exists(path) ? await File.ReadAllTextAsync(path, cancellationToken) : null;
     }
 
-    /// <summary>Writes the edited manifest contents over their counterparts in the tree.</summary>
+    /// <summary>
+    /// Writes the edited manifest contents over their counterparts in the tree.
+    ///
+    /// Every edit must land on a file that the archive actually contained. Creating a missing one
+    /// instead would be the worst possible failure: the edit would go to a path nothing builds, the
+    /// unedited tree would compile, and the run would report the change as verified.
+    /// </summary>
     public async Task ApplyEditsAsync(IReadOnlyList<ChangedManifest> edits, CancellationToken cancellationToken)
     {
         foreach (var edit in edits)
         {
             var path = Resolve(edit.Path);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            if (!File.Exists(path))
+            {
+                throw new InvalidOperationException(
+                    $"'{edit.Path}' is not present in the extracted tree, so the change cannot be verified against it.");
+            }
+
             await File.WriteAllTextAsync(path, edit.NewContent, cancellationToken);
         }
     }

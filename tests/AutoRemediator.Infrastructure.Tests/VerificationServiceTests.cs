@@ -45,7 +45,34 @@ public class VerificationServiceTests
         Assert.Empty(result.Outcome.Diagnostics);
         Assert.NotNull(result.Outcome.LogReference);
         Assert.Single(logs.Stored);
-        Assert.Equal(["restore --nologo", "build --no-restore --nologo -p:GenerateFullPaths=true"], cli.Invocations);
+        Assert.Equal(
+            ["restore \"App.sln\" --nologo", "build \"App.sln\" --no-restore --nologo -p:GenerateFullPaths=true"],
+            cli.Invocations);
+    }
+
+    [Fact]
+    public async Task Every_project_is_restored_and_built_when_there_is_no_solution()
+    {
+        var workspaces = new FakeWorkspaceFactory { BuildTargets = ["A.csproj", "B.csproj"] };
+
+        var (result, cli, _) = await VerifyAsync(FakeCli.AllSucceed(), workspaces);
+
+        Assert.Equal(VerificationClassification.Verified, result.Outcome.Classification);
+        Assert.Equal(4, cli.Invocations.Count);
+        Assert.Contains(cli.Invocations, i => i.Contains("A.csproj") && i.StartsWith("restore", StringComparison.Ordinal));
+        Assert.Contains(cli.Invocations, i => i.Contains("B.csproj") && i.StartsWith("build", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_tree_with_nothing_buildable_is_Skipped()
+    {
+        var workspaces = new FakeWorkspaceFactory { BuildTargets = [] };
+
+        var (result, cli, _) = await VerifyAsync(FakeCli.AllSucceed(), workspaces);
+
+        Assert.Equal(VerificationClassification.Skipped, result.Outcome.Classification);
+        Assert.Contains("no solution or project", result.Outcome.SkipReason);
+        Assert.Empty(cli.Invocations);
     }
 
     [Fact]
@@ -79,6 +106,24 @@ public class VerificationServiceTests
         Assert.Contains("restore", invoked.Invocations[0]);
         Assert.Equal(VerificationClassification.DependencyFailure, result.Outcome.Classification);
         Assert.Equal("NU1107", result.Outcome.Diagnostics.Single().Code);
+    }
+
+    [Fact]
+    public async Task Project_level_restore_error_is_parsed_with_its_path()
+    {
+        // MSBuild's project-level form: no (line,col). This is how NuGet reports most restore
+        // errors, so failing to parse it would misclassify them as environmental.
+        var cli = FakeCli.RestoreFails(
+            @"C:\work\src\App\App.csproj : error NU1101: Unable to find package Orion180.Nope. No packages exist with this id.");
+
+        var (result, _, _) = await VerifyAsync(cli);
+
+        Assert.Equal(VerificationClassification.DependencyFailure, result.Outcome.Classification);
+        var diagnostic = result.Outcome.Diagnostics.Single();
+        Assert.Equal("NU1101", diagnostic.Code);
+        Assert.Contains("Orion180.Nope", diagnostic.Message);
+        Assert.Null(diagnostic.Line);
+        Assert.EndsWith("App.csproj", diagnostic.Path);
     }
 
     [Fact]
@@ -303,6 +348,7 @@ public class VerificationServiceTests
     {
         public Exception? Throw { get; set; }
         public IReadOnlyList<FileChange> LockFileChanges { get; set; } = [];
+        public IReadOnlyList<string> BuildTargets { get; set; } = ["App.sln"];
         public FakeWorkspace? Created { get; private set; }
 
         public Task<IVerificationWorkspace> CreateAsync(
@@ -314,7 +360,7 @@ public class VerificationServiceTests
                 throw Throw;
             }
 
-            Created = new FakeWorkspace(LockFileChanges);
+            Created = new FakeWorkspace(LockFileChanges) { BuildTargets = BuildTargets };
             return Task.FromResult<IVerificationWorkspace>(Created);
         }
     }
@@ -324,6 +370,7 @@ public class VerificationServiceTests
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "autoremediator-fake");
         public bool Disposed { get; private set; }
         public IReadOnlyCollection<string> GeneratedPaths => ["NuGet.config"];
+        public IReadOnlyList<string> BuildTargets { get; init; } = ["App.sln"];
 
         public Task<string?> ReadAsync(string path, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public Task<IReadOnlyList<FileChange>> LockFileChangesAsync(CancellationToken ct = default) => Task.FromResult(lockFileChanges);

@@ -62,6 +62,6 @@
 
 ## 10. Verification of the whole slice
 
-- [ ] 10.1 Run the full test suite and confirm no regressions in analysis, policy, or alignment behavior
+- [x] 10.1 Run the full test suite and confirm no regressions in analysis, policy, or alignment behavior
 - [ ] 10.2 Run end to end locally against a real target repository: confirm a verified run opens a PR, a deliberately-broken bump ends in `VerificationFailed` with no PR, and a repository committing `packages.lock.json` gets a regenerated lock file in its commit
 - [ ] 10.3 Confirm the degradation path by making verification impossible (unreachable feed) and observing a `Completed` run with a PR marked not verified

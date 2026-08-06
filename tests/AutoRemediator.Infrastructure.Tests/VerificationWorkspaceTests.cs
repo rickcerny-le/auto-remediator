@@ -50,6 +50,30 @@ public class VerificationWorkspaceTests
     }
 
     [Fact]
+    public async Task A_repository_kept_entirely_under_src_is_not_stripped()
+    {
+        // Everything shares a top-level directory, but `src` belongs to the repository. Stripping it
+        // would relocate the whole tree and make every manifest path wrong.
+        using var workspace = await CreateAsync(() => TestArchive.Of(
+            ("src/Directory.Packages.props", "<Project />"),
+            ("src/Web/Web.csproj", "<Project />")));
+
+        Assert.NotNull(await workspace.ReadAsync("src/Directory.Packages.props", TestContext.Current.CancellationToken));
+        Assert.NotNull(await workspace.ReadAsync("src/Web/Web.csproj", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task An_edit_for_a_file_absent_from_the_tree_fails_loudly()
+    {
+        // Silently creating it would verify an unedited tree and report the change as verified.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateAsync(
+            () => TestArchive.Of(("Directory.Packages.props", "<Project />")),
+            [new ChangedManifest("/src/Nope/Nope.csproj", "<Project />")]));
+
+        Assert.Contains("not present in the extracted tree", ex.Message);
+    }
+
+    [Fact]
     public async Task Keeps_top_level_directories_when_there_is_no_single_wrapper()
     {
         using var workspace = await CreateAsync(() => TestArchive.Of(
@@ -167,6 +191,49 @@ public class VerificationWorkspaceTests
             TestContext.Current.CancellationToken);
 
         Assert.Empty(await workspace.LockFileChangesAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_solution_is_preferred_over_the_individual_projects()
+    {
+        using var workspace = await CreateAsync(() => TestArchive.Of(
+            ("App.sln", "Microsoft Visual Studio Solution File"),
+            ("src/A/A.csproj", "<Project />"),
+            ("src/B/B.csproj", "<Project />")));
+
+        var target = Assert.Single(workspace.BuildTargets);
+        Assert.EndsWith("App.sln", target);
+    }
+
+    [Fact]
+    public async Task The_shallowest_solution_wins()
+    {
+        using var workspace = await CreateAsync(() => TestArchive.Of(
+            ("build/Nested.sln", "nested"),
+            ("Root.sln", "root"),
+            ("src/A/A.csproj", "<Project />")));
+
+        Assert.EndsWith("Root.sln", Assert.Single(workspace.BuildTargets));
+    }
+
+    [Fact]
+    public async Task Every_project_is_a_target_when_there_is_no_solution()
+    {
+        using var workspace = await CreateAsync(() => TestArchive.Of(
+            ("src/A/A.csproj", "<Project />"),
+            ("src/B/B.csproj", "<Project />")));
+
+        Assert.Equal(2, workspace.BuildTargets.Count);
+        Assert.Contains(workspace.BuildTargets, t => t.EndsWith("A.csproj", StringComparison.Ordinal));
+        Assert.Contains(workspace.BuildTargets, t => t.EndsWith("B.csproj", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_tree_with_nothing_buildable_has_no_targets()
+    {
+        using var workspace = await CreateAsync(() => TestArchive.Of(("README.md", "# just docs")));
+
+        Assert.Empty(workspace.BuildTargets);
     }
 
     [Fact]

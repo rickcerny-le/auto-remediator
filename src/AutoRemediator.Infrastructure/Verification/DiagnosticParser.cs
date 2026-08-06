@@ -15,7 +15,16 @@ internal static partial class DiagnosticParser
         RegexOptions.ExplicitCapture)]
     private static partial Regex FileDiagnostic { get; }
 
-    /// <summary>A pathless `error CODE: message`, as NuGet restore emits.</summary>
+    /// <summary>
+    /// `path : error CODE: message` — MSBuild's project-level form, with no line or column. This is
+    /// how NuGet restore reports most of its errors, so it is not an edge case.
+    /// </summary>
+    [GeneratedRegex(
+        @"^(?<path>[^\r\n]*?[^\s:])\s+:\s*(?:error|ERROR)\s+(?<code>[A-Za-z]+[0-9]+)\s*:\s*(?<message>.+?)(?:\s*\[[^\]]*\])?$",
+        RegexOptions.ExplicitCapture)]
+    private static partial Regex ProjectDiagnostic { get; }
+
+    /// <summary>A pathless `error CODE: message`.</summary>
     [GeneratedRegex(
         @"^\s*(?:error|ERROR)\s+(?<code>[A-Za-z]+[0-9]+)\s*:\s*(?<message>.+?)(?:\s*\[[^\]]*\])?$",
         RegexOptions.ExplicitCapture)]
@@ -84,6 +93,16 @@ internal static partial class DiagnosticParser
                 diagnostics.Add(new VerificationDiagnostic(
                     plain.Groups["code"].Value,
                     plain.Groups["message"].Value.Trim()));
+                continue;
+            }
+
+            var project = ProjectDiagnostic.Match(line);
+            if (project.Success)
+            {
+                diagnostics.Add(new VerificationDiagnostic(
+                    project.Groups["code"].Value,
+                    project.Groups["message"].Value.Trim(),
+                    Relativize(project.Groups["path"].Value.Trim(), repositoryRoot)));
             }
         }
 

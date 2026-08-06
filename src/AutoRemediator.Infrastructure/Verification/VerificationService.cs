@@ -1,3 +1,4 @@
+using System.Text;
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Analysis;
 using AutoRemediator.Infrastructure.AzureDevOps;
@@ -61,14 +62,27 @@ internal sealed class VerificationService(
                 return VerificationResult.Skipped($"the repository tree could not be prepared: {ex.Message}");
             }
 
-            var restore = await dotnet.RunAsync("restore --nologo", workspace.Root, RestoreTimeout, cancellationToken);
+            if (workspace.BuildTargets.Count == 0)
+            {
+                logger.LogWarning("Run {RunId}: {Slug} contains no solution or project to verify.", runId, repository.Slug);
+                return VerificationResult.Skipped("the repository contains no solution or project to build");
+            }
+
+            // Restore gates build: its failures are cheaper to reach and are exactly the class of
+            // problem feed-metadata alignment cannot see (third-party and transitive conflicts).
+            var restore = await RunForEachTargetAsync(
+                workspace, target => $"restore \"{target}\" --nologo", RestoreTimeout, cancellationToken);
+
             if (!restore.Succeeded)
             {
                 return await FailedAsync(runId, workspace, "restore", restore, cancellationToken);
             }
 
-            var build = await dotnet.RunAsync(
-                "build --no-restore --nologo -p:GenerateFullPaths=true", workspace.Root, BuildTimeout, cancellationToken);
+            var build = await RunForEachTargetAsync(
+                workspace,
+                target => $"build \"{target}\" --no-restore --nologo -p:GenerateFullPaths=true",
+                BuildTimeout,
+                cancellationToken);
 
             if (!build.Succeeded)
             {
@@ -88,6 +102,34 @@ internal sealed class VerificationService(
         {
             workspace?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Runs a stage over every build target, stopping at the first failure. Output is accumulated so
+    /// the stored log shows every target that ran, not just the one that failed.
+    /// </summary>
+    private async Task<CliResult> RunForEachTargetAsync(
+        IVerificationWorkspace workspace,
+        Func<string, string> arguments,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var combined = new StringBuilder();
+        CliResult? last = null;
+
+        foreach (var target in workspace.BuildTargets)
+        {
+            var result = await dotnet.RunAsync(arguments(target), workspace.Root, timeout, cancellationToken);
+            combined.AppendLine(result.Output);
+            last = result;
+
+            if (!result.Succeeded)
+            {
+                return result with { Output = combined.ToString() };
+            }
+        }
+
+        return (last ?? new CliResult(0, string.Empty, false)) with { Output = combined.ToString() };
     }
 
     /// <summary>Classifies a failed stage and stores its log.</summary>
