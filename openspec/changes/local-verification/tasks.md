@@ -13,9 +13,9 @@
 
 ## 3. Azure DevOps: tree download
 
-- [ ] 3.1 Add `GetRepositoryArchiveAsync(repository, commitId, ct)` to `IAzureDevOpsClient`, returning the zip stream
-- [ ] 3.2 Implement it in `AzureDevOpsClient` against `items?scopePath=/&versionDescriptor.version={commit}&versionDescriptor.versionType=commit&$format=zip&download=true`, surfacing non-success statuses as failures rather than swallowing them
-- [ ] 3.3 Extend `AzureDevOpsClientTests` for the archive request shape and for failure propagation
+- [x] 3.1 Add `GetRepositoryArchiveAsync(repository, commitId, ct)` to `IAzureDevOpsClient`, returning the zip stream
+- [x] 3.2 Implement it in `AzureDevOpsClient` against `items?scopePath=/&versionDescriptor.version={commit}&versionDescriptor.versionType=commit&$format=zip&download=true`, surfacing non-success statuses as failures rather than swallowing them
+- [x] 3.3 Extend `AzureDevOpsClientTests` for the archive request shape and for failure propagation
 
 ## 4. Verification: tree materialization
 

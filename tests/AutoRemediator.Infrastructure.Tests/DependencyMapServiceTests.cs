@@ -121,6 +121,8 @@ public class DependencyMapServiceTests
         public Task<IReadOnlyList<RepositoryFile>> GetManifestsAsync(ManagedRepository r, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<RepositoryFile>>([new RepositoryFile("/Directory.Packages.props", manifest)]);
         public Task<string?> GetBranchHeadAsync(ManagedRepository r, string branch, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        public Task<Stream> GetRepositoryArchiveAsync(ManagedRepository r, string commitId, CancellationToken ct = default)
+            => throw new NotSupportedException("the dependency map never verifies");
         public Task PushFilesAsync(ManagedRepository r, string branch, string baseCommitId, IReadOnlyList<FileChange> changes, string message, CancellationToken ct = default) => Task.CompletedTask;
         public Task<string> EnsurePullRequestAsync(ManagedRepository r, string s, string t, string title, string desc, CancellationToken ct = default) => Task.FromResult("");
     }

@@ -55,6 +55,26 @@ internal sealed class AzureDevOpsClient(HttpClient httpClient) : IAzureDevOpsCli
         return payload?.Value?.FirstOrDefault(r => string.Equals(r.Name, fullName, StringComparison.OrdinalIgnoreCase))?.ObjectId;
     }
 
+    public async Task<Stream> GetRepositoryArchiveAsync(
+        ManagedRepository repository,
+        string commitId,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"{RepoBase(repository)}/items?scopePath=/&recursionLevel=Full" +
+                  $"&versionDescriptor.version={Uri.EscapeDataString(commitId)}&versionDescriptor.versionType=commit" +
+                  $"&$format=zip&download=true&{ApiVersion}";
+
+        // Buffered rather than streamed: the response must be disposed with the request, and the
+        // caller extracts from a seekable stream.
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var archive = new MemoryStream();
+        await response.Content.CopyToAsync(archive, cancellationToken);
+        archive.Position = 0;
+        return archive;
+    }
+
     public async Task PushFilesAsync(
         ManagedRepository repository,
         string branch,

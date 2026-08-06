@@ -64,6 +64,44 @@ public class AzureDevOpsClientTests
         Assert.Contains(handler.Requests, r => r.Method == HttpMethod.Post && r.RequestUri!.PathAndQuery.Contains("/pushes"));
     }
 
+    [Fact]
+    public async Task GetRepositoryArchive_requests_a_zip_at_the_commit()
+    {
+        var payload = new byte[] { 0x50, 0x4B, 0x03, 0x04, 1, 2, 3 }; // PK.. zip magic
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload),
+        });
+
+        await using var archive = await Client(handler).GetRepositoryArchiveAsync(
+            Repo, "abc123", TestContext.Current.CancellationToken);
+
+        var request = Assert.Single(handler.Requests);
+        var query = request.RequestUri!.PathAndQuery;
+        Assert.Contains("/items", query);
+        Assert.Contains("$format=zip", query);
+        Assert.Contains("download=true", query);
+        Assert.Contains("versionDescriptor.version=abc123", query);
+        Assert.Contains("versionDescriptor.versionType=commit", query);
+        Assert.Contains("recursionLevel=Full", query);
+
+        var buffer = new byte[payload.Length];
+        Assert.Equal(payload.Length, await archive.ReadAsync(buffer, TestContext.Current.CancellationToken));
+        Assert.Equal(payload, buffer);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task GetRepositoryArchive_propagates_failure(HttpStatusCode status)
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(status));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => Client(handler).GetRepositoryArchiveAsync(
+            Repo, "abc123", TestContext.Current.CancellationToken));
+    }
+
     private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
