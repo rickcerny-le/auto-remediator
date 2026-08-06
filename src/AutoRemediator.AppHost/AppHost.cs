@@ -3,8 +3,10 @@ using AutoRemediator.Contracts;
 var builder = DistributedApplication.CreateBuilder(args);
 
 // --- Backing resources (emulated locally, real Azure when deployed) ---
+// Azurite rejects the storage SDK's current x-ms-version on container creation with a bare 400,
+// so blob operations (run artifacts / verification logs) fail locally without this flag.
 var storage = builder.AddAzureStorage("storage")
-    .RunAsEmulator();
+    .RunAsEmulator(emulator => emulator.WithArgs("--skipApiVersionCheck"));
 var tables = storage.AddTables("tables");
 var blobs = storage.AddBlobs("blobs");
 

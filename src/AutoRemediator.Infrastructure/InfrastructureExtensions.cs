@@ -91,6 +91,9 @@ public static class InfrastructureExtensions
 
         // Local verification: materialize the tree, restore, then build.
         builder.Services.AddScoped<IVerificationWorkspaceFactory, VerificationWorkspaceFactory>();
+        builder.Services.AddSingleton<IDotnetCliRunner, DotnetCliRunner>();
+        builder.Services.AddSingleton<IVerificationLogStore, BlobVerificationLogStore>();
+        builder.Services.AddScoped<IVerificationService, VerificationService>();
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IRemediationRunner, RemediationRunner>();

@@ -26,17 +26,17 @@
 
 ## 5. Verification: restore and build
 
-- [ ] 5.1 Add a process runner that executes `dotnet` with arguments, captures stdout/stderr, enforces a timeout, and honours the cancellation token
-- [ ] 5.2 Run `dotnet restore` against the edited tree; run `dotnet build --no-restore -p:GenerateFullPaths=true --nologo` only on restore success
-- [ ] 5.3 Parse output into structured diagnostics (MSBuild `path(line,col): error CODE: message` form and NuGet `NU`-coded errors), normalizing paths to repository-relative
-- [ ] 5.4 Implement outcome classification: `Verified`; `DependencyFailure` only on positively-identified dependency/compilation diagnostics; `Skipped` for tree/SDK/feed/timeout failures and as the default for unidentified failures
-- [ ] 5.5 Detect `packages.lock.json` files created or modified by restore and expose them as additional file changes, introducing none where none existed
-- [ ] 5.6 Write `VerificationServiceTests` over captured sample restore/build output for each classification, diagnostic parsing, path normalization, diagnostic bounding, and lock-file detection
+- [x] 5.1 Add a process runner that executes `dotnet` with arguments, captures stdout/stderr, enforces a timeout, and honours the cancellation token
+- [x] 5.2 Run `dotnet restore` against the edited tree; run `dotnet build --no-restore -p:GenerateFullPaths=true --nologo` only on restore success
+- [x] 5.3 Parse output into structured diagnostics (MSBuild `path(line,col): error CODE: message` form and NuGet `NU`-coded errors), normalizing paths to repository-relative
+- [x] 5.4 Implement outcome classification: `Verified`; `DependencyFailure` only on positively-identified dependency/compilation diagnostics; `Skipped` for tree/SDK/feed/timeout failures and as the default for unidentified failures
+- [x] 5.5 Detect `packages.lock.json` files created or modified by restore and expose them as additional file changes, introducing none where none existed
+- [x] 5.6 Write `VerificationServiceTests` over captured sample restore/build output for each classification, diagnostic parsing, path normalization, diagnostic bounding, and lock-file detection
 
 ## 6. Run artifacts
 
-- [ ] 6.1 Store the full restore and build logs to blob storage via `IBlobStore` under a per-run path and return the reference for the run record
-- [ ] 6.2 Test that logs are written for every outcome, including `Skipped`
+- [x] 6.1 Store the full restore and build logs to blob storage via `IBlobStore` under a per-run path and return the reference for the run record
+- [x] 6.2 Test that logs are written for every outcome, including `Skipped`
 
 ## 7. Runner: pipeline restructure
 
