@@ -8,9 +8,17 @@ public enum RunStatus
     Reading,
     Analyzing,
     Applying,
+    Verifying,
+    Pushing,
     CreatingPr,
     Completed,
     NoUpdates,
+
+    /// <summary>
+    /// Local verification positively rejected the computed change, so no pull request was opened.
+    /// A result, not a crash — distinct from <see cref="Failed"/>.
+    /// </summary>
+    VerificationFailed,
     Failed,
 }
 
@@ -58,7 +66,13 @@ public sealed class RemediationRun : Entity<Guid>
     public string? PullRequestUrl { get; private set; }
     public string? Error { get; private set; }
 
+    /// <summary>The local verification result, or null when verification was not reached.</summary>
+    public VerificationOutcome? Verification { get; private set; }
+
     public void Advance(RunStatus status) => Status = status;
+
+    /// <summary>Records the local verification result. Does not itself end the run.</summary>
+    public void Verified(VerificationOutcome outcome) => Verification = Guard.AgainstNull(outcome);
 
     public void Completed(IEnumerable<DependencyUpdate> updates, string pullRequestUrl, DateTimeOffset finishedAtUtc)
     {
@@ -66,6 +80,22 @@ public sealed class RemediationRun : Entity<Guid>
         _updates.AddRange(updates);
         PullRequestUrl = Guard.AgainstNullOrWhiteSpace(pullRequestUrl);
         Status = RunStatus.Completed;
+        FinishedAtUtc = finishedAtUtc;
+    }
+
+    /// <summary>
+    /// Ends the run because verification rejected the computed change. The attempted updates are
+    /// recorded for diagnosis, but no pull request exists and none will be opened.
+    /// </summary>
+    public void VerificationFailed(
+        IEnumerable<DependencyUpdate> attemptedUpdates,
+        VerificationOutcome outcome,
+        DateTimeOffset finishedAtUtc)
+    {
+        _updates.Clear();
+        _updates.AddRange(attemptedUpdates);
+        Verification = Guard.AgainstNull(outcome);
+        Status = RunStatus.VerificationFailed;
         FinishedAtUtc = finishedAtUtc;
     }
 
@@ -92,7 +122,8 @@ public sealed class RemediationRun : Entity<Guid>
         DateTimeOffset? finishedAtUtc,
         IEnumerable<DependencyUpdate> updates,
         string? pullRequestUrl,
-        string? error)
+        string? error,
+        VerificationOutcome? verification = null)
     {
         var run = new RemediationRun(id, repositoryId, repositorySlug, startedAtUtc)
         {
@@ -100,6 +131,7 @@ public sealed class RemediationRun : Entity<Guid>
             FinishedAtUtc = finishedAtUtc,
             PullRequestUrl = pullRequestUrl,
             Error = error,
+            Verification = verification,
         };
         run._updates.AddRange(updates);
         return run;
