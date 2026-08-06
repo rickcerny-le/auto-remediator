@@ -19,10 +19,10 @@
 
 ## 4. Verification: tree materialization
 
-- [ ] 4.1 Create `AutoRemediator.Infrastructure/Verification/` with an `IVerificationWorkspace` abstraction that extracts an archive to a per-run temp directory and disposes it (deleting the directory) on any exit path
-- [ ] 4.2 Apply the plan's edited manifest contents into the extracted tree
-- [ ] 4.3 Generate a `NuGet.config` at the tree root declaring the configured feeds with PAT credentials (merging the repository's existing sources; `<clear/>` for ordering and credential control), tracked as a verification-only artifact excluded from any commit
-- [ ] 4.4 Unit-test workspace extraction, edit application, cleanup on failure and cancellation, and that the generated config is marked non-committable
+- [x] 4.1 Create `AutoRemediator.Infrastructure/Verification/` with an `IVerificationWorkspace` abstraction that extracts an archive to a per-run temp directory and disposes it (deleting the directory) on any exit path
+- [x] 4.2 Apply the plan's edited manifest contents into the extracted tree
+- [x] 4.3 Generate a `NuGet.config` at the tree root declaring the configured feeds with PAT credentials (merging the repository's existing sources; `<clear/>` for ordering and credential control), tracked as a verification-only artifact excluded from any commit
+- [x] 4.4 Unit-test workspace extraction, edit application, cleanup on failure and cancellation, and that the generated config is marked non-committable
 
 ## 5. Verification: restore and build
 

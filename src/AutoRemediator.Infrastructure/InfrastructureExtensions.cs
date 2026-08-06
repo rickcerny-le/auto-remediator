@@ -8,6 +8,7 @@ using AutoRemediator.Infrastructure.Feeds;
 using AutoRemediator.Infrastructure.Messaging;
 using AutoRemediator.Infrastructure.Remediation;
 using AutoRemediator.Infrastructure.Storage;
+using AutoRemediator.Infrastructure.Verification;
 using Azure.Core;
 using Azure.Data.Tables;
 using Azure.Identity;
@@ -87,6 +88,10 @@ public static class InfrastructureExtensions
         builder.Services.AddScoped<IRepositoryAnalyzer, RepositoryAnalyzer>();
         builder.Services.AddScoped<IDependencyMapService, DependencyMapService>();
         builder.Services.AddScoped<IUpdatePlanner, UpdatePlanner>();
+
+        // Local verification: materialize the tree, restore, then build.
+        builder.Services.AddScoped<IVerificationWorkspaceFactory, VerificationWorkspaceFactory>();
+
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IRemediationRunner, RemediationRunner>();
 
