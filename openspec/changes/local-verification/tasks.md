@@ -40,12 +40,12 @@
 
 ## 7. Runner: pipeline restructure
 
-- [ ] 7.1 Split `Applying` in `RemediationRunner`: compute edits and materialize the tree without pushing, keeping the `NoUpdates` short-circuit ahead of any download
-- [ ] 7.2 Insert the `Verifying` stage; on `DependencyFailure` end the run in `VerificationFailed` with diagnostics and no push or PR
-- [ ] 7.3 Add the `Pushing` stage: push edited manifests plus any regenerated lock file, excluding verification-only artifacts
-- [ ] 7.4 On `Skipped`, continue to push and open the PR, recording the skip and its reason
-- [ ] 7.5 Include the verification outcome in the PR description — verified locally, or skipped with the reason
-- [ ] 7.6 Extend `RemediationRunnerTests` for all three outcomes end to end: verified → PR; dependency failure → no push, no PR, `VerificationFailed`; skipped → PR with a not-verified note
+- [x] 7.1 Split `Applying` in `RemediationRunner`: compute edits and materialize the tree without pushing, keeping the `NoUpdates` short-circuit ahead of any download
+- [x] 7.2 Insert the `Verifying` stage; on `DependencyFailure` end the run in `VerificationFailed` with diagnostics and no push or PR
+- [x] 7.3 Add the `Pushing` stage: push edited manifests plus any regenerated lock file, excluding verification-only artifacts
+- [x] 7.4 On `Skipped`, continue to push and open the PR, recording the skip and its reason
+- [x] 7.5 Include the verification outcome in the PR description — verified locally, or skipped with the reason
+- [x] 7.6 Extend `RemediationRunnerTests` for all three outcomes end to end: verified → PR; dependency failure → no push, no PR, `VerificationFailed`; skipped → PR with a not-verified note
 
 ## 8. API and UI
 

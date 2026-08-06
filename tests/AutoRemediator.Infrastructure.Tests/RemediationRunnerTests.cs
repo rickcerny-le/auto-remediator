@@ -4,6 +4,7 @@ using AutoRemediator.Infrastructure.Analysis;
 using AutoRemediator.Infrastructure.AzureDevOps;
 using AutoRemediator.Infrastructure.Configuration;
 using AutoRemediator.Infrastructure.Remediation;
+using AutoRemediator.Infrastructure.Verification;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -17,21 +18,139 @@ public class RemediationRunnerTests
     private static RemediationRunRequested Request => new(
         Guid.NewGuid(), Repo.Id, Repo.Organization, Repo.Project, Repo.Name, DateTimeOffset.UtcNow);
 
+    private static RepositoryUpdatePlan SinglePlan => new(
+        [new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")],
+        [new ChangedManifest("/Directory.Packages.props", "<Project/>")]);
+
     [Fact]
     public async Task Completed_when_updates_are_applied_and_pr_opened()
     {
-        var plan = new RepositoryUpdatePlan(
-            [new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")],
-            [new ChangedManifest("/Directory.Packages.props", "<Project/>")]);
         var ado = new FakeAdo { PrUrl = "https://dev.azure.com/org/proj/_git/repo/pullrequest/42" };
         var store = new RecordingRunStore();
 
-        var run = await RunAsync(plan, ado, store);
+        var run = await RunAsync(SinglePlan, ado, store);
 
         Assert.Equal(RunStatus.Completed, run.Status);
         Assert.Equal("https://dev.azure.com/org/proj/_git/repo/pullrequest/42", run.PullRequestUrl);
         Assert.Equal(1, ado.Pushes);
         Assert.Equal(RunStatus.Completed, store.Last?.Status);
+        Assert.Equal(VerificationClassification.Verified, run.Verification?.Classification);
+    }
+
+    // ---- Verification outcomes -----------------------------------------------------
+
+    [Fact]
+    public async Task Verified_change_is_pushed_and_the_pr_says_so()
+    {
+        var ado = new FakeAdo();
+
+        var run = await RunAsync(SinglePlan, ado, new RecordingRunStore());
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Equal(1, ado.Pushes);
+        Assert.Contains("Verified locally", ado.LastDescription);
+        Assert.DoesNotContain("Not verified", ado.LastDescription);
+    }
+
+    [Fact]
+    public async Task Rejected_change_ends_in_VerificationFailed_with_no_push_and_no_pr()
+    {
+        var ado = new FakeAdo();
+        var store = new RecordingRunStore();
+        var outcome = VerificationOutcome.DependencyFailure(
+            [new VerificationDiagnostic("CS0117", "'Client' has no member 'SubmitAsync'", "src/Foo/Bar.cs", 42, 17)],
+            "runs/abc/verification.log");
+
+        var run = await RunAsync(SinglePlan, ado, store, new FakeVerification(new VerificationResult(outcome, [])));
+
+        Assert.Equal(RunStatus.VerificationFailed, run.Status);
+        Assert.Equal(0, ado.Pushes);
+        Assert.Null(ado.LastDescription);
+        Assert.Null(run.PullRequestUrl);
+        Assert.Null(run.Error);
+        Assert.Equal(RunStatus.VerificationFailed, store.Last?.Status);
+
+        // The attempted updates and diagnostics are kept for diagnosis.
+        Assert.Equal("Orion180.Core", Assert.Single(run.Updates).PackageId);
+        Assert.Equal("CS0117", run.Verification?.Diagnostics.Single().Code);
+        Assert.Equal("runs/abc/verification.log", run.Verification?.LogReference);
+    }
+
+    [Fact]
+    public async Task Skipped_verification_still_opens_a_pr_marked_not_verified()
+    {
+        var ado = new FakeAdo();
+        var outcome = VerificationOutcome.Skipped("the configured feed was unreachable");
+
+        var run = await RunAsync(SinglePlan, ado, new RecordingRunStore(), new FakeVerification(new VerificationResult(outcome, [])));
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Equal(1, ado.Pushes);
+        Assert.NotNull(run.PullRequestUrl);
+        Assert.Contains("Not verified locally", ado.LastDescription);
+        Assert.Contains("the configured feed was unreachable", ado.LastDescription);
+        Assert.Equal(VerificationClassification.Skipped, run.Verification?.Classification);
+    }
+
+    [Fact]
+    public async Task Regenerated_lock_file_joins_the_pushed_changes()
+    {
+        var ado = new FakeAdo();
+        var result = new VerificationResult(
+            VerificationOutcome.Verified(),
+            [new FileChange("/src/Web/packages.lock.json", """{ "version": 1 }""")]);
+
+        await RunAsync(SinglePlan, ado, new RecordingRunStore(), new FakeVerification(result));
+
+        Assert.Equal(
+            ["/Directory.Packages.props", "/src/Web/packages.lock.json"],
+            ado.LastChanges!.Select(c => c.Path));
+    }
+
+    [Fact]
+    public async Task Verification_runs_against_the_commit_the_push_is_based_on()
+    {
+        var verification = new FakeVerification(new VerificationResult(VerificationOutcome.Verified(), []));
+
+        await RunAsync(SinglePlan, new FakeAdo(), new RecordingRunStore(), verification);
+
+        Assert.Equal("commit-abc", verification.CommitId);
+    }
+
+    [Fact]
+    public async Task Nothing_is_pushed_before_verification_runs()
+    {
+        var ado = new FakeAdo();
+        var verification = new FakeVerification(new VerificationResult(VerificationOutcome.Verified(), []))
+        {
+            OnVerify = () => Assert.Equal(0, ado.Pushes),
+        };
+
+        await RunAsync(SinglePlan, ado, new RecordingRunStore(), verification);
+
+        Assert.Equal(1, ado.Pushes);
+    }
+
+    [Fact]
+    public async Task NoUpdates_never_downloads_a_tree_or_verifies()
+    {
+        var verification = new FakeVerification(new VerificationResult(VerificationOutcome.Verified(), []));
+
+        var run = await RunAsync(RepositoryUpdatePlan.Empty, new FakeAdo(), new RecordingRunStore(), verification);
+
+        Assert.Equal(RunStatus.NoUpdates, run.Status);
+        Assert.False(verification.WasCalled);
+        Assert.Null(run.Verification);
+    }
+
+    [Fact]
+    public async Task Pr_description_always_names_the_repository_ci_as_the_authority()
+    {
+        var ado = new FakeAdo();
+
+        await RunAsync(SinglePlan, ado, new RecordingRunStore());
+
+        Assert.Contains("validated by this repository's own CI", ado.LastDescription);
     }
 
     [Fact]
@@ -80,7 +199,11 @@ public class RemediationRunnerTests
         Assert.Equal(RunStatus.Failed, store.Last?.Status);
     }
 
-    private static async Task<RemediationRun> RunAsync(RepositoryUpdatePlan plan, FakeAdo ado, RecordingRunStore store)
+    private static async Task<RemediationRun> RunAsync(
+        RepositoryUpdatePlan plan,
+        FakeAdo ado,
+        RecordingRunStore store,
+        FakeVerification? verification = null)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
@@ -93,11 +216,14 @@ public class RemediationRunnerTests
         builder.Services.RemoveAll<IUpdatePlanner>();
         builder.Services.RemoveAll<IAzureDevOpsClient>();
         builder.Services.RemoveAll<IRemediationRunStore>();
+        builder.Services.RemoveAll<IVerificationService>();
         builder.Services.AddSingleton<IManagedRepositoryStore>(new FakeRepoStore(Repo));
         builder.Services.AddSingleton<ITargetingSettingsStore>(new FakeSettingsStore());
         builder.Services.AddSingleton<IUpdatePlanner>(new FakePlanner(plan));
         builder.Services.AddSingleton<IAzureDevOpsClient>(ado);
         builder.Services.AddSingleton<IRemediationRunStore>(store);
+        builder.Services.AddSingleton<IVerificationService>(
+            verification ?? new FakeVerification(new VerificationResult(VerificationOutcome.Verified(), [])));
 
         await using var provider = builder.Services.BuildServiceProvider();
         return await provider.GetRequiredService<IRemediationRunner>().RunAsync(Request, TestContext.Current.CancellationToken);
@@ -122,12 +248,30 @@ public class RemediationRunnerTests
         public Task<RepositoryUpdatePlan> PlanAsync(ManagedRepository r, TargetingSettings s, CancellationToken ct = default) => Task.FromResult(plan);
     }
 
+    private sealed class FakeVerification(VerificationResult result) : IVerificationService
+    {
+        public bool WasCalled { get; private set; }
+        public string? CommitId { get; private set; }
+        public Action? OnVerify { get; set; }
+
+        public Task<VerificationResult> VerifyAsync(
+            Guid runId, ManagedRepository repository, string commitId, RepositoryUpdatePlan plan,
+            TargetingSettings settings, CancellationToken ct = default)
+        {
+            WasCalled = true;
+            CommitId = commitId;
+            OnVerify?.Invoke();
+            return Task.FromResult(result);
+        }
+    }
+
     private sealed class FakeAdo : IAzureDevOpsClient
     {
         public string PrUrl { get; set; } = "https://pr";
         public bool ThrowOnPush { get; set; }
         public int Pushes { get; private set; }
         public string? LastDescription { get; private set; }
+        public IReadOnlyList<FileChange>? LastChanges { get; private set; }
 
         public Task<bool> RepositoryExistsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult(true);
         public Task<IReadOnlyList<RepositoryFile>> GetManifestsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RepositoryFile>>([]);
@@ -138,6 +282,7 @@ public class RemediationRunnerTests
         {
             if (ThrowOnPush) throw new InvalidOperationException("push failed");
             Pushes++;
+            LastChanges = changes;
             return Task.CompletedTask;
         }
         public Task<string> EnsurePullRequestAsync(ManagedRepository r, string s, string t, string title, string desc, CancellationToken ct = default)
