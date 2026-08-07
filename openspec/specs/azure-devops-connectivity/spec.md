@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the Azure DevOps client behind an abstraction: authenticating to a configured organization with a PAT sourced from Azure Key Vault (with local user-secrets fallback), verifying repositories, discovering dependency manifests, reading file contents, and performing the write operations required for remediation — pushing commits to a branch and creating or finding pull requests via the REST API without cloning.
+Defines the Azure DevOps client behind an abstraction: authenticating to a configured organization with a PAT sourced from Azure Key Vault (with local user-secrets fallback), verifying repositories, discovering dependency manifests, reading file contents, retrieving the full tree as an archive for local verification, and performing the write operations required for remediation — pushing commits to a branch and creating or finding pull requests via the REST API without cloning.
 
 ## Requirements
 
@@ -42,3 +42,16 @@ For a repository, the client SHALL be able to locate the dependency manifests re
 #### Scenario: Locate manifests in a repository
 - **WHEN** manifests are requested for a configured repository
 - **THEN** the client returns the paths/contents of the `Directory.Packages.props` and `*.csproj` files present on the default branch
+
+### Requirement: Repository tree download as an archive
+The Azure DevOps client SHALL expose retrieval of a repository's full tree at a specified commit as a zip archive, using the same authenticated REST connection as manifest discovery. This SHALL NOT require a `git` binary, a clone, or any credential beyond the PAT already used for reads. Repositories using Git LFS or submodules are not supported by this retrieval.
+
+Unlike the read paths, which return empty or null on failure, this operation SHALL surface a failed request to the caller — silently returning an empty tree would let a run verify nothing and report success.
+
+#### Scenario: The tree is retrieved at a commit
+- **WHEN** the client is asked for a repository's tree at a specific commit id
+- **THEN** it returns a zip archive of the repository content at that commit, obtained over the REST API without cloning
+
+#### Scenario: Download failure is reported, not swallowed
+- **WHEN** the archive request fails or returns a non-success status
+- **THEN** the client surfaces the failure to the caller so verification can be classified as skipped
