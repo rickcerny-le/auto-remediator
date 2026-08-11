@@ -10,8 +10,6 @@ using AutoRemediator.Infrastructure.Messaging;
 using AutoRemediator.Infrastructure.Remediation;
 using AutoRemediator.Infrastructure.Storage;
 using AutoRemediator.Infrastructure.Verification;
-using Azure.Core;
-using Azure.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -40,31 +38,20 @@ public static class InfrastructureExtensions
     {
         var config = builder.Configuration;
 
-        // Passed explicitly rather than relying on the integrations' default credential, because
-        // AZURE_CLIENT_ID may arrive through any configuration source, not only the environment.
-        var credential = CreateCredential(config);
+        // Credentials are deliberately left to the integrations' own DefaultAzureCredential.
+        // Setting one explicitly forces the credential code path even when the connection value
+        // is a connection string, which breaks the emulators: the Service Bus health check then
+        // builds its own client from an empty FullyQualifiedNamespace and throws. The
+        // user-assigned identity is still selected in Azure, because the deployment injects
+        // AZURE_CLIENT_ID as a process environment variable and DefaultAzureCredential reads it.
+        builder.AddAzureTableServiceClient(TablesConnectionName);
+        builder.AddAzureBlobServiceClient(BlobsConnectionName);
 
-        // Azure Storage — Azurite emulator locally, real accounts (endpoint + managed
-        // identity) in Azure. The integration picks whichever the connection value is.
-        builder.AddAzureTableServiceClient(
-            TablesConnectionName,
-            settings => settings.Credential = credential);
-
-        builder.AddAzureBlobServiceClient(
-            BlobsConnectionName,
-            settings => settings.Credential = credential);
-
-        // Azure Service Bus — emulator locally, namespace FQDN + managed identity in Azure.
         builder.AddAzureServiceBusClient(
             ServiceBusConnectionName,
-            settings =>
-            {
-                settings.Credential = credential;
-
-                // Without a queue to probe, the integration's health check cannot verify
-                // anything beyond client construction.
-                settings.HealthCheckQueueName = RemediationQueues.RemediationRuns;
-            });
+            // Without a queue to probe, the integration's health check cannot verify
+            // anything beyond client construction.
+            settings => settings.HealthCheckQueueName = RemediationQueues.RemediationRuns);
 
         builder.Services.AddSingleton<ITableStore, TableStore>();
         builder.Services.AddSingleton<IBlobStore, BlobStore>();
@@ -109,22 +96,5 @@ public static class InfrastructureExtensions
         builder.Services.AddScoped<IRemediationRunner, RemediationRunner>();
 
         return builder;
-    }
-
-    /// <summary>
-    /// Builds a credential for endpoint-based clients, pinned to the user-assigned
-    /// identity via <c>AZURE_CLIENT_ID</c> when present.
-    /// </summary>
-    private static TokenCredential CreateCredential(IConfiguration config)
-    {
-        var options = new DefaultAzureCredentialOptions();
-
-        var clientId = config["AZURE_CLIENT_ID"];
-        if (!string.IsNullOrWhiteSpace(clientId))
-        {
-            options.ManagedIdentityClientId = clientId;
-        }
-
-        return new DefaultAzureCredential(options);
     }
 }

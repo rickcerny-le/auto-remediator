@@ -28,8 +28,14 @@ builder.AddProject<Projects.AutoRemediator_Web>("web")
     .WaitFor(api);
 
 // --- Scheduler worker (deployed as a scheduled/cron ACA Job) ---
+// Reads the enrolled repositories from Table Storage before enqueueing, so it needs storage
+// as well as the queue. Every service shares one AddInfrastructure, so all three connection
+// values must be present for any of them to start.
 builder.AddProject<Projects.AutoRemediator_Worker_Scheduler>("scheduler")
+    .WithReference(tables)
+    .WithReference(blobs)
     .WithReference(serviceBus)
+    .WaitFor(storage)
     .WaitFor(serviceBus);
 
 // --- Remediation worker (deployed as an event-driven, queue-scaled ACA Job) ---
@@ -37,6 +43,7 @@ builder.AddProject<Projects.AutoRemediator_Worker_Remediation>("remediation")
     .WithReference(tables)
     .WithReference(blobs)
     .WithReference(serviceBus)
+    .WaitFor(storage)
     .WaitFor(serviceBus);
 
 builder.Build().Run();

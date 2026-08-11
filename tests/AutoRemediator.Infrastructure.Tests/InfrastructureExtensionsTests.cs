@@ -39,12 +39,12 @@ public class InfrastructureExtensionsTests
     public async Task AddInfrastructure_resolves_with_endpoints_and_managed_identity()
     {
         var builder = Host.CreateApplicationBuilder();
-        // Endpoint-style values (as injected by the Azure deployment) + the
-        // user-assigned identity client id. Client construction is offline.
+        // Endpoint-style values, as injected by the Azure deployment. Client construction is
+        // offline. The user-assigned identity is selected by the AZURE_CLIENT_ID *environment*
+        // variable, which DefaultAzureCredential reads itself — not by anything we pass in.
         builder.Configuration["ConnectionStrings:tables"] = "https://examplestg.table.core.windows.net/";
         builder.Configuration["ConnectionStrings:blobs"] = "https://examplestg.blob.core.windows.net/";
         builder.Configuration["ConnectionStrings:servicebus"] = "example-ns.servicebus.windows.net";
-        builder.Configuration["AZURE_CLIENT_ID"] = "00000000-0000-0000-0000-000000000000";
 
         builder.AddInfrastructure();
 
