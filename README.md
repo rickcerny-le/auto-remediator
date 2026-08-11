@@ -103,10 +103,48 @@ should not be inferred from the local shape:
 The ACA Job definitions and KEDA/cron settings themselves are deferred to a later
 deployment/IaC change.
 
+## The AI remediation loop — local vs. deployed
+
+When a dependency bump verifies cleanly, nothing AI-related happens. When it fails to
+**compile**, the run hands the diagnostics and the affected source to an agent, applies the
+edits it proposes, and re-verifies — up to a bounded number of attempts. A restore-time
+(`NU`) conflict never reaches the agent: that is version math, handled by feed-metadata
+alignment, and source edits cannot fix it.
+
+The model differs by environment, and **its effectiveness at this task differs with it**:
+
+| | Local development | Deployed |
+| --- | --- | --- |
+| Model | Foundry Local (e.g. Phi-4), started by the AppHost | Azure AI Foundry deployment (e.g. `gpt-4o-mini`) |
+| Purpose | exercising the loop — bounds, edit safety, transcripts, terminal states | actually repairing breaks |
+| Expected repair rate | **low; do not use it to judge the feature** | the number that matters, and it is measured, not assumed |
+
+The loop's mechanics are deterministic and fully tested against a fake chat client. **No test
+asserts a repair rate**, because that would be asserting a property of a model rather than of
+this system. Treat a local run that fails to repair as normal.
+
+Failing to repair is never worse than not trying: the run ends exactly where the same
+rejection ends with no agent at all — `VerificationFailed`, no pull request — plus the attempt
+count and a transcript.
+
+Guardrails worth knowing:
+
+- The agent proposes edits; it never runs commands. Only `restore` and `build` execute.
+- Edits are refused unless they target an existing file inside the run's temporary tree.
+  Dependency manifests, project files, lock files and verification artifacts are off limits,
+  so the agent cannot override version selection.
+- Nothing is ever pushed outside a pull request on `autoremediator/dependency-updates`.
+- A pull request containing agent edits **says so**, with the attempt count and a transcript
+  link. Review those diffs accordingly.
+
+Without Foundry Local installed the system runs normally and still opens pull requests; only
+AI repair is unavailable, and runs record that rather than implying an attempt.
+
 ## Configuration
 
 | Key | Purpose |
 | --- | --- |
 | `ConnectionStrings:tables` / `:blobs` / `:servicebus` | Injected by the AppHost (Azurite / SB emulator locally). |
-| `Agents:FoundryEndpoint` / `Agents:ModelDeploymentName` | Azure AI Foundry endpoint + model deployment for the MAF agent. |
+| `ConnectionStrings:chat` | Injected by the AppHost — the model the AI loop uses (Foundry Local locally, the Foundry deployment when deployed). Absent means no AI repair. |
+| `Agents:MaxAttempts` / `Agents:TokenBudget` / `Agents:AttemptTimeout` | Bounds on the AI loop: attempts per run (3), tokens per run (120k), and per-model-call timeout (3m). |
 | `Scheduler:DevLoopEnabled` / `Scheduler:DevLoopIntervalSeconds` | Local-only re-trigger of the run-once scheduler. |

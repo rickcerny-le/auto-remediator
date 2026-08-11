@@ -46,4 +46,11 @@ public sealed record RunDetailDto(
     string? PullRequestUrl,
     string? Error,
     IReadOnlyList<RunUpdateDto> Updates,
-    RunVerificationDto? Verification = null);
+    RunVerificationDto? Verification = null,
+    RunRemediationDto? Remediation = null);
+
+/// <summary>
+/// What the AI repair loop did for a run. Present only when the loop ran; an attempt count of zero
+/// means it was entered but produced no attempt.
+/// </summary>
+public sealed record RunRemediationDto(int Attempts, string? TranscriptUrl);

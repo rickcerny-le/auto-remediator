@@ -17,13 +17,21 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
     private static readonly Guid RejectedRunId = Guid.NewGuid();
     private static readonly Guid SkippedRunId = Guid.NewGuid();
 
+    private static readonly Guid RepairedRunId = Guid.NewGuid();
+
     private const string LogReference = "verification.log";
     private const string LogContent = "=== dotnet restore ===\nRestore succeeded.";
+    private const string TranscriptReference = "remediation-transcript.md";
+    private const string TranscriptContent = "## Attempt 1\n- applied `src/App/Program.cs`";
 
     private HttpClient CreateClient()
     {
         var store = new InMemoryRunStore();
-        var logs = new InMemoryLogStore { [LogReference] = LogContent };
+        var logs = new InMemoryLogStore
+        {
+            [LogReference] = LogContent,
+            [TranscriptReference] = TranscriptContent,
+        };
 
         var completed = new RemediationRun(CompletedRunId, Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow.AddMinutes(-5));
         completed.Verified(VerificationOutcome.Verified(LogReference));
@@ -44,10 +52,16 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         skipped.Verified(VerificationOutcome.Skipped("the configured feed was unreachable"));
         skipped.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/2", DateTimeOffset.UtcNow);
 
+        var repaired = new RemediationRun(RepairedRunId, Guid.NewGuid(), "orion180/platform/gateway", DateTimeOffset.UtcNow);
+        repaired.Verified(VerificationOutcome.Verified(LogReference));
+        repaired.Remediated(attempts: 2, transcriptReference: TranscriptReference);
+        repaired.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/5", DateTimeOffset.UtcNow);
+
         store.Seed(completed);
         store.Seed(failed);
         store.Seed(rejected);
         store.Seed(skipped);
+        store.Seed(repaired);
 
         return factory.WithWebHostBuilder(b =>
             b.ConfigureTestServices(services =>
@@ -65,7 +79,45 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var runs = await CreateClient().GetFromJsonAsync<List<RunSummaryDto>>("/api/runs", TestContext.Current.CancellationToken);
 
         Assert.NotNull(runs);
-        Assert.Equal(4, runs.Count);
+        Assert.Equal(5, runs.Count);
+    }
+
+    [Fact]
+    public async Task Detail_reports_the_remediation_attempts_and_transcript()
+    {
+        var run = await CreateClient().GetFromJsonAsync<RunDetailDto>($"/api/runs/{RepairedRunId}", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(run!.Remediation);
+        Assert.Equal(2, run.Remediation!.Attempts);
+        Assert.Equal($"/api/runs/{RepairedRunId}/remediation-transcript", run.Remediation.TranscriptUrl);
+    }
+
+    [Fact]
+    public async Task Detail_reports_no_remediation_when_the_loop_never_ran()
+    {
+        var run = await CreateClient().GetFromJsonAsync<RunDetailDto>($"/api/runs/{CompletedRunId}", TestContext.Current.CancellationToken);
+
+        Assert.Null(run!.Remediation);
+    }
+
+    [Fact]
+    public async Task Transcript_is_served_as_plain_text()
+    {
+        var response = await CreateClient().GetAsync(
+            $"/api/runs/{RepairedRunId}/remediation-transcript", TestContext.Current.CancellationToken);
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(TranscriptContent, await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Transcript_is_404_when_the_run_stored_none()
+    {
+        var response = await CreateClient().GetAsync(
+            $"/api/runs/{CompletedRunId}/remediation-transcript", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

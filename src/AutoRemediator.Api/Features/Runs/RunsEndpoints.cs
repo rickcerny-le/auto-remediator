@@ -38,14 +38,27 @@ public sealed class RunsEndpoints : IFeatureEndpoint
             Guid id, IRemediationRunStore store, IVerificationLogStore logs, CancellationToken ct) =>
         {
             var run = await store.GetAsync(id, ct);
-            if (run?.Verification?.LogReference is not { } reference)
-            {
-                return Results.NotFound();
-            }
-
-            var content = await logs.ReadAsync(reference, ct);
-            return content is null ? Results.NotFound() : Results.Text(content, "text/plain");
+            return await ArtifactAsync(run?.Verification?.LogReference, logs, ct);
         });
+
+        group.MapGet("/{id:guid}/remediation-transcript", async (
+            Guid id, IRemediationRunStore store, IVerificationLogStore logs, CancellationToken ct) =>
+        {
+            var run = await store.GetAsync(id, ct);
+            return await ArtifactAsync(run?.RemediationTranscriptReference, logs, ct);
+        });
+    }
+
+    /// <summary>Serves a stored run artifact as plain text, or not-found when there is none.</summary>
+    private static async Task<IResult> ArtifactAsync(string? reference, IVerificationLogStore logs, CancellationToken ct)
+    {
+        if (reference is null)
+        {
+            return Results.NotFound();
+        }
+
+        var content = await logs.ReadAsync(reference, ct);
+        return content is null ? Results.NotFound() : Results.Text(content, "text/plain");
     }
 
     private static RunSummaryDto ToSummary(RemediationRun r) =>
@@ -54,7 +67,15 @@ public sealed class RunsEndpoints : IFeatureEndpoint
     private static RunDetailDto ToDetail(RemediationRun r) =>
         new(r.Id, r.RepositorySlug, r.Status.ToString(), r.StartedAtUtc, r.FinishedAtUtc, r.PullRequestUrl, r.Error,
             r.Updates.Select(u => new RunUpdateDto(u.PackageId, u.FromVersion, u.ToVersion, u.Kind.ToString(), u.BeyondPolicy)).ToList(),
-            ToVerification(r));
+            ToVerification(r),
+            ToRemediation(r));
+
+    private static RunRemediationDto? ToRemediation(RemediationRun r)
+        => r.RemediationAttempts is not { } attempts
+            ? null
+            : new RunRemediationDto(
+                attempts,
+                r.RemediationTranscriptReference is null ? null : $"/api/runs/{r.Id}/remediation-transcript");
 
     private static RunVerificationDto? ToVerification(RemediationRun r)
     {

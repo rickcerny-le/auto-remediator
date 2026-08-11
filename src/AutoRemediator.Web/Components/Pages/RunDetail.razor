@@ -37,6 +37,27 @@ else
         }
     </MudPaper>
 
+    @if (_run.Remediation is { } remediation)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1" data-testid="run-remediation">
+            <div class="d-flex align-center gap-3 mb-2">
+                <MudText Typo="Typo.subtitle1">AI remediation</MudText>
+                <span class="ar-pill info"><span class="ar-dot"></span>@remediation.Attempts attempt@(remediation.Attempts == 1 ? "" : "s")</span>
+                <MudSpacer />
+                @if (remediation.TranscriptUrl is not null)
+                {
+                    <MudLink Href="@ApiUrl(remediation.TranscriptUrl)" Target="_blank" Class="ar-mono" data-testid="remediation-transcript-link">transcript</MudLink>
+                }
+            </div>
+            <MudText Typo="Typo.body2">
+                A compile break in this run was handed to an AI agent, which proposed source edits that were
+                re-verified. @(_run.PullRequestUrl is null
+                    ? "The attempts did not produce a building tree, so no pull request was opened."
+                    : "The pull request therefore contains AI-authored source edits.")
+            </MudText>
+        </MudPaper>
+    }
+
     @if (_run.Verification is { } verification)
     {
         <MudPaper Class="pa-4 mb-4" Elevation="1" data-testid="run-verification">

@@ -56,12 +56,12 @@
 
 - [x] 9.1 Add the AI disclosure to the pull-request description: that it contains AI-authored source edits, the attempt count, and the transcript link
 - [x] 9.2 Assert a run with no agent involvement makes no such claim
-- [ ] 9.3 Extend the run detail DTO, endpoint and transcript route; extend `RunsEndpointTests`
-- [ ] 9.4 Show attempts and the transcript link on the Run detail page
+- [x] 9.3 Extend the run detail DTO, endpoint and transcript route; extend `RunsEndpointTests`
+- [x] 9.4 Show attempts and the transcript link on the Run detail page
 
 ## 10. Safety and verification of the whole slice
 
 - [x] 10.1 Assert as a test that writes go only to the per-repo update branch and always through a pull request, including on agent-repaired runs
-- [ ] 10.2 Run the full test suite and confirm no regression in analysis, policy, alignment, or Slice 4's verification behavior
+- [x] 10.2 Run the full test suite and confirm no regression in analysis, policy, alignment, or Slice 4's verification behavior
 - [ ] 10.3 Exercise the loop locally end to end against a deliberately broken bump, using the local model, and confirm the transcript and PR disclosure read correctly
-- [ ] 10.4 Document the expected repair effectiveness per environment, noting that the local development model and the deployed model differ in capability and that no test asserts a repair rate
+- [x] 10.4 Document the expected repair effectiveness per environment, noting that the local development model and the deployed model differ in capability and that no test asserts a repair rate
