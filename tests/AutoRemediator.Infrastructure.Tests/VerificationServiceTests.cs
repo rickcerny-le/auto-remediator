@@ -375,6 +375,10 @@ public class VerificationServiceTests
 
         public Task<string?> ReadAsync(string path, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public Task<IReadOnlyList<FileChange>> LockFileChangesAsync(CancellationToken ct = default) => Task.FromResult(lockFileChanges);
+        public Task<EditApplication> ApplyProposedEditAsync(ProposedEdit edit, CancellationToken ct = default)
+            => Task.FromResult(EditApplication.Accepted(edit.Path));
+        public Task<IReadOnlyList<FileChange>> AppliedEditChangesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<FileChange>>([]);
         public void Dispose() => Disposed = true;
     }
 

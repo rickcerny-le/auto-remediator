@@ -38,6 +38,29 @@ public interface IVerificationWorkspace : IDisposable
     /// otherwise every project. Empty when the tree contains nothing buildable.
     /// </summary>
     IReadOnlyList<string> BuildTargets { get; }
+
+    /// <summary>
+    /// Applies an agent-proposed edit if it is permitted, and reports what happened. Rejection is a
+    /// normal outcome recorded for the transcript, not an error.
+    /// </summary>
+    Task<EditApplication> ApplyProposedEditAsync(ProposedEdit edit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Source edits applied by the agent, as commit-ready changes with Azure DevOps-style rooted
+    /// paths. Empty when no proposed edit was applied.
+    /// </summary>
+    Task<IReadOnlyList<FileChange>> AppliedEditChangesAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>The outcome of offering one proposed edit to the workspace.</summary>
+/// <param name="Path">The path as proposed, for the transcript.</param>
+/// <param name="Applied">Whether the edit reached the tree.</param>
+/// <param name="RejectionReason">Why it did not, when it did not.</param>
+public sealed record EditApplication(string Path, bool Applied, string? RejectionReason = null)
+{
+    public static EditApplication Accepted(string path) => new(path, true);
+
+    public static EditApplication Rejected(string path, string reason) => new(path, false, reason);
 }
 
 /// <summary>Creates a <see cref="IVerificationWorkspace"/> for a run.</summary>
@@ -186,6 +209,10 @@ internal sealed class VerificationWorkspace(string root) : IVerificationWorkspac
     private const string LockFileName = "packages.lock.json";
 
     private readonly HashSet<string> _generated = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Repository-relative paths the agent successfully edited, in application order.</summary>
+    private readonly List<string> _appliedEdits = [];
+
     private Dictionary<string, string> _lockFileBaseline = new(StringComparer.OrdinalIgnoreCase);
 
     public string Root => root;
@@ -374,6 +401,89 @@ internal sealed class VerificationWorkspace(string root) : IVerificationWorkspac
         }
 
         return changes;
+    }
+
+    /// <summary>
+    /// Applies an agent-proposed edit only if every constraint holds. Each rejection guards against
+    /// a specific failure: escaping the root would write outside the run's sandbox; creating an
+    /// absent file would leave the unedited tree compiling and the change reported as verified;
+    /// editing a manifest or lock file would silently override version selection, which belongs to
+    /// the planner and to restore; and verification artifacts are ours, not the agent's.
+    /// </summary>
+    public async Task<EditApplication> ApplyProposedEditAsync(ProposedEdit edit, CancellationToken cancellationToken = default)
+    {
+        var relative = edit.Path.Replace('\\', '/').TrimStart('/').Trim();
+
+        if (relative.Length == 0)
+        {
+            return EditApplication.Rejected(edit.Path, "the path was empty");
+        }
+
+        var absolute = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
+
+        if (!absolute.StartsWith(Path.GetFullPath(root) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+        {
+            return EditApplication.Rejected(edit.Path, "the path resolves outside the workspace root");
+        }
+
+        if (IsDependencyManifest(relative))
+        {
+            return EditApplication.Rejected(edit.Path, "dependency manifests and lock files are not the agent's to edit");
+        }
+
+        if (_generated.Contains(relative))
+        {
+            return EditApplication.Rejected(edit.Path, "the file was generated for verification");
+        }
+
+        if (!File.Exists(absolute))
+        {
+            return EditApplication.Rejected(edit.Path, "the file is not present in the extracted tree");
+        }
+
+        await File.WriteAllTextAsync(absolute, edit.NewContent, cancellationToken);
+        _appliedEdits.Add(relative);
+
+        return EditApplication.Accepted(edit.Path);
+    }
+
+    public async Task<IReadOnlyList<FileChange>> AppliedEditChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var changes = new List<FileChange>();
+
+        foreach (var relative in _appliedEdits)
+        {
+            var absolute = Resolve(relative);
+            if (!File.Exists(absolute))
+            {
+                continue;
+            }
+
+            changes.Add(new FileChange(
+                "/" + relative,
+                await File.ReadAllTextAsync(absolute, cancellationToken)));
+        }
+
+        return changes;
+    }
+
+    /// <summary>
+    /// True for files that carry dependency versions. Central package management, project files and
+    /// lock files all drive version selection, which the planner and restore own.
+    /// </summary>
+    private static bool IsDependencyManifest(string relativePath)
+    {
+        var name = Path.GetFileName(relativePath);
+
+        return name.Equals(LockFileName, StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Directory.Packages.props", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Directory.Build.props", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Directory.Build.targets", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("NuGet.config", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("packages.config", StringComparison.OrdinalIgnoreCase)
+               || relativePath.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+               || relativePath.EndsWith(".props", StringComparison.OrdinalIgnoreCase)
+               || relativePath.EndsWith(".targets", StringComparison.OrdinalIgnoreCase);
     }
 
     private IEnumerable<string> EnumerateLockFiles()

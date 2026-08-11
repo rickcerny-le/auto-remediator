@@ -236,6 +236,121 @@ public class VerificationWorkspaceTests
         Assert.Empty(workspace.BuildTargets);
     }
 
+    // ---- Edit safety boundary --------------------------------------------------------
+
+    /// <summary>A tree with the shapes the boundary has to discriminate between.</summary>
+    private static Task<IVerificationWorkspace> EditableWorkspaceAsync() => CreateAsync(() => TestArchive.Of(
+        ("Directory.Packages.props", "<Project />"),
+        ("Directory.Build.props", "<Project />"),
+        ("src/App/App.csproj", "<Project />"),
+        ("src/App/Program.cs", "public static class Program { public static void Main() { } }"),
+        ("src/App/packages.lock.json", """{ "version": 1 }""")));
+
+    [Fact]
+    public async Task A_source_edit_inside_the_tree_is_applied()
+    {
+        using var workspace = await EditableWorkspaceAsync();
+
+        var result = await workspace.ApplyProposedEditAsync(
+            new ProposedEdit("src/App/Program.cs", "// repaired"), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Applied);
+        Assert.Null(result.RejectionReason);
+        Assert.Equal("// repaired", await workspace.ReadAsync("src/App/Program.cs", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task An_applied_edit_becomes_a_commit_ready_change()
+    {
+        using var workspace = await EditableWorkspaceAsync();
+
+        await workspace.ApplyProposedEditAsync(
+            new ProposedEdit("src/App/Program.cs", "// repaired"), TestContext.Current.CancellationToken);
+
+        var change = Assert.Single(await workspace.AppliedEditChangesAsync(TestContext.Current.CancellationToken));
+        Assert.Equal("/src/App/Program.cs", change.Path);
+        Assert.Equal("// repaired", change.Content);
+    }
+
+    [Fact]
+    public async Task No_applied_edits_means_no_changes()
+    {
+        using var workspace = await EditableWorkspaceAsync();
+
+        Assert.Empty(await workspace.AppliedEditChangesAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("../escaped.cs", "outside the workspace root")]
+    [InlineData("src/../../escaped.cs", "outside the workspace root")]
+    [InlineData("src/App/Nope.cs", "not present in the extracted tree")]
+    [InlineData("Directory.Packages.props", "not the agent's to edit")]
+    [InlineData("Directory.Build.props", "not the agent's to edit")]
+    [InlineData("src/App/App.csproj", "not the agent's to edit")]
+    [InlineData("src/App/packages.lock.json", "not the agent's to edit")]
+    [InlineData("NuGet.config", "not the agent's to edit")]
+    [InlineData("", "the path was empty")]
+    public async Task A_disallowed_edit_is_rejected_with_a_reason(string path, string expectedReason)
+    {
+        using var workspace = await EditableWorkspaceAsync();
+
+        var result = await workspace.ApplyProposedEditAsync(
+            new ProposedEdit(path, "malicious or mistaken"), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Applied);
+        Assert.Contains(expectedReason, result.RejectionReason);
+        Assert.Empty(await workspace.AppliedEditChangesAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task A_rejected_manifest_edit_does_not_change_the_file()
+    {
+        using var workspace = await EditableWorkspaceAsync();
+
+        await workspace.ApplyProposedEditAsync(
+            new ProposedEdit("Directory.Packages.props", "<Project>tampered</Project>"), TestContext.Current.CancellationToken);
+
+        Assert.Equal("<Project />", await workspace.ReadAsync("Directory.Packages.props", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task An_escaping_edit_writes_nothing_outside_the_root()
+    {
+        using var workspace = await EditableWorkspaceAsync();
+        var outside = Path.Combine(Directory.GetParent(workspace.Root)!.FullName, "escaped.cs");
+
+        await workspace.ApplyProposedEditAsync(
+            new ProposedEdit("../escaped.cs", "should not exist"), TestContext.Current.CancellationToken);
+
+        Assert.False(File.Exists(outside));
+    }
+
+    [Fact]
+    public async Task The_generated_nuget_config_is_rejected_even_though_it_exists()
+    {
+        // It is present in the tree, so only the generated-artifact rule stops it.
+        using var workspace = await CreateAsync(() => TestArchive.Of(("src/App/Program.cs", "// code")));
+
+        Assert.Contains("NuGet.config", workspace.GeneratedPaths);
+
+        var result = await workspace.ApplyProposedEditAsync(
+            new ProposedEdit("NuGet.config", "<configuration />"), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Applied);
+    }
+
+    [Fact]
+    public async Task Backslashed_and_rooted_paths_still_resolve()
+    {
+        using var workspace = await EditableWorkspaceAsync();
+
+        var result = await workspace.ApplyProposedEditAsync(
+            new ProposedEdit("/src\\App\\Program.cs", "// repaired"), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Applied);
+        Assert.Equal("/src/App/Program.cs", Assert.Single(await workspace.AppliedEditChangesAsync(TestContext.Current.CancellationToken)).Path);
+    }
+
     [Fact]
     public async Task Dispose_deletes_the_workspace_directory()
     {

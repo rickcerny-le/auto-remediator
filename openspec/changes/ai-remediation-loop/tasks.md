@@ -34,9 +34,9 @@
 
 ## 6. Edit safety boundary
 
-- [ ] 6.1 Apply proposed edits only when the path resolves inside the workspace root, the file already exists, it is not a dependency manifest or lock file, and it is not a verification-generated artifact
-- [ ] 6.2 Record every rejected edit and its reason rather than failing the attempt
-- [ ] 6.3 Test each rejection case: path escape, absent file, `Directory.Packages.props`, a lock file, the generated `NuGet.config`; and that a legitimate source edit is applied
+- [x] 6.1 Apply proposed edits only when the path resolves inside the workspace root, the file already exists, it is not a dependency manifest or lock file, and it is not a verification-generated artifact
+- [x] 6.2 Record every rejected edit and its reason rather than failing the attempt
+- [x] 6.3 Test each rejection case: path escape, absent file, `Directory.Packages.props`, a lock file, the generated `NuGet.config`; and that a legitimate source edit is applied
 
 ## 7. The loop
 
