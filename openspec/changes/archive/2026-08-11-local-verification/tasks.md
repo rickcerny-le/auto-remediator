@@ -63,5 +63,16 @@
 ## 10. Verification of the whole slice
 
 - [x] 10.1 Run the full test suite and confirm no regressions in analysis, policy, or alignment behavior
-- [ ] 10.2 Run end to end locally against a real target repository: confirm a verified run opens a PR, a deliberately-broken bump ends in `VerificationFailed` with no PR, and a repository committing `packages.lock.json` gets a regenerated lock file in its commit
-- [ ] 10.3 Confirm the degradation path by making verification impossible (unreachable feed) and observing a `Completed` run with a PR marked not verified
+> **Dropped at archive time.** Two tasks required a live Azure DevOps repository and
+> credentials, which are not configured:
+>
+> - ~~10.2 Run end to end against a real target repository (verified run opens a PR; a broken bump
+>   ends in `VerificationFailed` with no PR; a lock-file repository gets a regenerated lock file).~~
+> - ~~10.3 Confirm the degradation path by making verification impossible and observing a
+>   `Completed` run with a PR marked not verified.~~
+>
+> `VerificationEndToEndTests` covers the equivalent ground locally against the real toolchain —
+> real extraction, `dotnet restore`, `dotnet build`, parsing and classification — for all three
+> outcomes plus lock-file regeneration. What remains unexercised is the Azure DevOps **write**
+> path: the push including the lock file, and the rendered pull-request body. Both are covered by
+> unit tests against a fake client but have never run against a real repository.

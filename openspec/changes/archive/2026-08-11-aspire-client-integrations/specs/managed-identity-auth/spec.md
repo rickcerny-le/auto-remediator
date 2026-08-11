@@ -1,10 +1,4 @@
-# managed-identity-auth Specification
-
-## Purpose
-
-Defines how `AutoRemediator.Infrastructure` authenticates to Azure services via the Aspire client integrations, supporting both Managed Identity (endpoint plus token credential) in deployed environments and connection strings for local emulator development, chosen automatically by the shape of the configured value, with a health check per resource, while keeping all registrations resolvable and unit-tested without network calls.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Dual-mode Azure client construction
 `AutoRemediator.Infrastructure` SHALL register the Storage (`TableServiceClient`, `BlobServiceClient`) and Service Bus (`ServiceBusClient`) clients through the Aspire client integrations, which resolve each `ConnectionStrings:<name>` value in dual mode: an `http`/`https` URI (Storage) or a bare namespace FQDN (Service Bus) is treated as a service endpoint and paired with a token credential; a value carrying connection-string markers uses the connection string. The system SHALL NOT reimplement that selection itself.
@@ -38,17 +32,6 @@ Credential handling for the Key Vault configuration source is separate and unaff
 - **WHEN** `AZURE_CLIENT_ID` is absent and all values are connection strings
 - **THEN** infrastructure registration still succeeds and the clients resolve (the credential is not exercised)
 
-### Requirement: Each Azure resource contributes a health check
-Registering the Storage and Service Bus clients SHALL also register a health check per resource, so a host's health endpoint reflects the reachability of its dependencies rather than only process liveness. The Service Bus registration SHALL name the queue to probe, without which its health check verifies nothing beyond client construction.
-
-#### Scenario: Health checks are registered for every Azure resource
-- **WHEN** `AddInfrastructure` is called
-- **THEN** the registered health checks include one for Table Storage, one for Blob Storage, and one for Service Bus
-
-#### Scenario: An unreachable dependency is reported as unhealthy
-- **WHEN** a configured Azure resource cannot be reached
-- **THEN** the host's health endpoint reports unhealthy, while its liveness endpoint continues to report healthy
-
 ### Requirement: Registration remains resolvable and unit-tested
 `AddInfrastructure` SHALL register the Storage, Service Bus, and Azure DevOps abstractions such that they resolve from the container for both the endpoint and connection-string configurations, and both paths SHALL be covered by unit tests that make no network calls.
 
@@ -59,3 +42,16 @@ Registering the Storage and Service Bus clients SHALL also register a health che
 #### Scenario: The Azure clients themselves resolve
 - **WHEN** `AddInfrastructure` is called with a connection-string configuration
 - **THEN** `TableServiceClient`, `BlobServiceClient` and `ServiceBusClient` resolve from the service provider without any network call
+
+## ADDED Requirements
+
+### Requirement: Each Azure resource contributes a health check
+Registering the Storage and Service Bus clients SHALL also register a health check per resource, so a host's health endpoint reflects the reachability of its dependencies rather than only process liveness. The Service Bus registration SHALL name the queue to probe, without which its health check verifies nothing beyond client construction.
+
+#### Scenario: Health checks are registered for every Azure resource
+- **WHEN** `AddInfrastructure` is called
+- **THEN** the registered health checks include one for Table Storage, one for Blob Storage, and one for Service Bus
+
+#### Scenario: An unreachable dependency is reported as unhealthy
+- **WHEN** a configured Azure resource cannot be reached
+- **THEN** the host's health endpoint reports unhealthy, while its liveness endpoint continues to report healthy
