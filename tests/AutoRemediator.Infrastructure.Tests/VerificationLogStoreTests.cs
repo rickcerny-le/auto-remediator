@@ -30,7 +30,7 @@ public class VerificationLogStoreTests
         string? reference;
         try
         {
-            reference = await store.StoreAsync(runId, content, ct);
+            reference = await store.StoreAsync(runId, content, cancellationToken: ct);
         }
         catch (Exception ex) when (ex is not Xunit.Sdk.XunitException)
         {
@@ -56,7 +56,7 @@ public class VerificationLogStoreTests
         var store = provider.GetRequiredService<IVerificationLogStore>();
 
         // Force the container to exist so a missing blob is distinguishable from a missing emulator.
-        if (await store.StoreAsync(Guid.NewGuid(), "probe", ct) is null)
+        if (await store.StoreAsync(Guid.NewGuid(), "probe", cancellationToken: ct) is null)
         {
             Assert.Skip("Azurite storage emulator not reachable.");
             return;

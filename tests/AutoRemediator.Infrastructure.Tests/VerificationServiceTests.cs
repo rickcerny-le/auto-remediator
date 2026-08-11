@@ -28,8 +28,9 @@ public class VerificationServiceTests
             logs,
             NullLogger<VerificationService>.Instance);
 
-        var result = await service.VerifyAsync(
+        using var session = await service.OpenAsync(
             RunId, Repo, "commit-abc", Plan, Settings, TestContext.Current.CancellationToken);
+        var result = await session.VerifyAsync(TestContext.Current.CancellationToken);
 
         return (result, cli, logs);
     }
@@ -381,9 +382,9 @@ public class VerificationServiceTests
     {
         public Dictionary<string, string> Stored { get; } = [];
 
-        public Task<string?> StoreAsync(Guid runId, string content, CancellationToken ct = default)
+        public Task<string?> StoreAsync(Guid runId, string content, string name = "verification.log", CancellationToken ct = default)
         {
-            var reference = $"{runId}/verification.log";
+            var reference = $"{runId}/{name}";
             Stored[reference] = content;
             return Task.FromResult<string?>(reference);
         }

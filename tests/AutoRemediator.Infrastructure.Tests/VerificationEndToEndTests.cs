@@ -45,10 +45,18 @@ public class VerificationEndToEndTests
             NullLogger<VerificationService>.Instance);
     }
 
-    private static Task<VerificationResult> VerifyAsync(
+    private static async Task<VerificationResult> VerifyAsync(
         Func<Stream> archive,
         IReadOnlyList<ChangedManifest>? edits = null)
-        => Service(archive).VerifyAsync(
+    {
+        using var session = await OpenAsync(archive, edits);
+        return await session.VerifyAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static Task<IVerificationSession> OpenAsync(
+        Func<Stream> archive,
+        IReadOnlyList<ChangedManifest>? edits = null)
+        => Service(archive).OpenAsync(
             Guid.NewGuid(),
             Repo,
             "commit-abc",
@@ -181,6 +189,112 @@ public class VerificationEndToEndTests
         Assert.Contains("could not be prepared", result.Outcome.SkipReason);
     }
 
+    // ---- Re-runnable verification (the AI loop's foundation) ------------------------
+
+    [Fact]
+    public async Task A_second_verification_compiles_edits_applied_since_the_first()
+    {
+        // Broken as extracted, then repaired in place — exactly what the remediation loop does.
+        using var session = await OpenAsync(() => TestArchive.Of(
+            ("src/App/App.csproj", Csproj),
+            ("src/App/Program.cs", """
+                public static class Program
+                {
+                    public static void Main() { NoSuchThing(); }
+                }
+                """)));
+
+        var first = await session.VerifyAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(VerificationClassification.DependencyFailure, first.Outcome.Classification);
+        Assert.Contains(first.Outcome.Diagnostics, d => d.Code == "CS0103");
+
+        await File.WriteAllTextAsync(
+            Path.Combine(session.Workspace!.Root, "src", "App", "Program.cs"),
+            "public static class Program { public static void Main() { } }",
+            TestContext.Current.CancellationToken);
+
+        var second = await session.VerifyAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(VerificationClassification.Verified, second.Outcome.Classification);
+    }
+
+    [Fact]
+    public async Task The_archive_is_downloaded_once_per_run_however_often_it_verifies()
+    {
+        var downloads = 0;
+        Stream Archive()
+        {
+            downloads++;
+            return TestArchive.Of(
+                ("src/App/App.csproj", Csproj),
+                ("src/App/Program.cs", "public static class Program { public static void Main() { } }"));
+        }
+
+        using var session = await OpenAsync(Archive);
+        await session.VerifyAsync(TestContext.Current.CancellationToken);
+        await session.VerifyAsync(TestContext.Current.CancellationToken);
+        await session.VerifyAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, downloads);
+    }
+
+    [Fact]
+    public async Task Each_verification_stores_its_own_log()
+    {
+        // A repeated verification must not overwrite the evidence from an earlier attempt.
+        var logs = new RecordingLogStore();
+        var factory = new VerificationWorkspaceFactory(
+            new ArchiveOnlyAdo(() => TestArchive.Of(
+                ("src/App/App.csproj", Csproj),
+                ("src/App/Program.cs", "public static class Program { public static void Main() { } }"))),
+            Options.Create(new AzureDevOpsOptions { Pat = null }),
+            NullLogger<VerificationWorkspaceFactory>.Instance);
+
+        var service = new VerificationService(
+            factory,
+            new DotnetCliRunner(NullLogger<DotnetCliRunner>.Instance),
+            logs,
+            NullLogger<VerificationService>.Instance);
+
+        using var session = await service.OpenAsync(
+            Guid.NewGuid(), Repo, "commit-abc", new RepositoryUpdatePlan([], []), Settings,
+            TestContext.Current.CancellationToken);
+
+        var first = await session.VerifyAsync(TestContext.Current.CancellationToken);
+        var second = await session.VerifyAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(first.Outcome.LogReference, second.Outcome.LogReference);
+        Assert.Equal(2, logs.Names.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Disposing_a_session_deletes_the_tree_even_after_several_verifications()
+    {
+        var session = await OpenAsync(() => TestArchive.Of(
+            ("src/App/App.csproj", Csproj),
+            ("src/App/Program.cs", "public static class Program { public static void Main() { } }")));
+
+        await session.VerifyAsync(TestContext.Current.CancellationToken);
+        await session.VerifyAsync(TestContext.Current.CancellationToken);
+        var root = session.Workspace!.Root;
+
+        session.Dispose();
+
+        Assert.False(Directory.Exists(root));
+    }
+
+    [Fact]
+    public async Task An_unavailable_tree_reports_skipped_and_disposes_cleanly()
+    {
+        using var session = await OpenAsync(() => throw new HttpRequestException("404 from the archive endpoint"));
+
+        Assert.Null(session.Workspace);
+
+        var result = await session.VerifyAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(VerificationClassification.Skipped, result.Outcome.Classification);
+        Assert.Contains("could not be prepared", result.Outcome.SkipReason);
+    }
+
     [Fact]
     public async Task No_workspace_directory_survives_a_run()
     {
@@ -210,11 +324,26 @@ public class VerificationEndToEndTests
             => throw new NotSupportedException("verification never opens a pull request");
     }
 
+    /// <summary>Records the artifact names a run stored, to prove repeated verifications do not collide.</summary>
+    private sealed class RecordingLogStore : IVerificationLogStore
+    {
+        public List<string> Names { get; } = [];
+
+        public Task<string?> StoreAsync(Guid runId, string content, string name = "verification.log", CancellationToken ct = default)
+        {
+            Names.Add(name);
+            return Task.FromResult<string?>($"{runId}/{name}");
+        }
+
+        public Task<string?> ReadAsync(string reference, CancellationToken ct = default)
+            => Task.FromResult<string?>(null);
+    }
+
     /// <summary>Keeps blob storage out of these tests; log capture is covered elsewhere.</summary>
     private sealed class NullLogStore : IVerificationLogStore
     {
-        public Task<string?> StoreAsync(Guid runId, string content, CancellationToken ct = default)
-            => Task.FromResult<string?>($"{runId}/verification.log");
+        public Task<string?> StoreAsync(Guid runId, string content, string name = "verification.log", CancellationToken ct = default)
+            => Task.FromResult<string?>($"{runId}/{name}");
 
         public Task<string?> ReadAsync(string reference, CancellationToken ct = default)
             => Task.FromResult<string?>(null);

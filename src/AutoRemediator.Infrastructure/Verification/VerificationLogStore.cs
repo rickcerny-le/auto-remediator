@@ -10,8 +10,16 @@ namespace AutoRemediator.Infrastructure.Verification;
 /// </summary>
 public interface IVerificationLogStore
 {
-    /// <summary>Writes the log for a run and returns its reference, or null if it could not be stored.</summary>
-    Task<string?> StoreAsync(Guid runId, string content, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Writes an artifact for a run and returns its reference, or null if it could not be stored.
+    /// <paramref name="name"/> distinguishes artifacts within a run — a run that verifies more than
+    /// once must not have its earlier logs overwritten by later attempts.
+    /// </summary>
+    Task<string?> StoreAsync(
+        Guid runId,
+        string content,
+        string name = "verification.log",
+        CancellationToken cancellationToken = default);
 
     /// <summary>Reads back a stored log, or null when the reference is unknown.</summary>
     Task<string?> ReadAsync(string reference, CancellationToken cancellationToken = default);
@@ -21,9 +29,13 @@ internal sealed class BlobVerificationLogStore(IBlobStore blobs, ILogger<BlobVer
 {
     public const string ContainerName = "run-artifacts";
 
-    public async Task<string?> StoreAsync(Guid runId, string content, CancellationToken cancellationToken = default)
+    public async Task<string?> StoreAsync(
+        Guid runId,
+        string content,
+        string name = "verification.log",
+        CancellationToken cancellationToken = default)
     {
-        var reference = $"{runId}/verification.log";
+        var reference = $"{runId}/{name}";
 
         try
         {

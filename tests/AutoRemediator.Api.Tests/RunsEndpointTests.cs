@@ -195,9 +195,9 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
             set => _logs[reference] = value;
         }
 
-        public Task<string?> StoreAsync(Guid runId, string content, CancellationToken ct = default)
+        public Task<string?> StoreAsync(Guid runId, string content, string name = "verification.log", CancellationToken ct = default)
         {
-            var reference = $"{runId}/verification.log";
+            var reference = $"{runId}/{name}";
             _logs[reference] = content;
             return Task.FromResult<string?>(reference);
         }

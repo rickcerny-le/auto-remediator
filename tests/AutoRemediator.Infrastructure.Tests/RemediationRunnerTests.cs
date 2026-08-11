@@ -248,20 +248,35 @@ public class RemediationRunnerTests
         public Task<RepositoryUpdatePlan> PlanAsync(ManagedRepository r, TargetingSettings s, CancellationToken ct = default) => Task.FromResult(plan);
     }
 
-    private sealed class FakeVerification(VerificationResult result) : IVerificationService
+    private sealed class FakeVerification(VerificationResult verificationResult) : IVerificationService
     {
+        private readonly VerificationResult result = verificationResult;
+
         public bool WasCalled { get; private set; }
         public string? CommitId { get; private set; }
         public Action? OnVerify { get; set; }
+        public bool SessionDisposed { get; private set; }
 
-        public Task<VerificationResult> VerifyAsync(
+        public Task<IVerificationSession> OpenAsync(
             Guid runId, ManagedRepository repository, string commitId, RepositoryUpdatePlan plan,
             TargetingSettings settings, CancellationToken ct = default)
         {
-            WasCalled = true;
             CommitId = commitId;
-            OnVerify?.Invoke();
-            return Task.FromResult(result);
+            return Task.FromResult<IVerificationSession>(new FakeSession(this));
+        }
+
+        private sealed class FakeSession(FakeVerification owner) : IVerificationSession
+        {
+            public IVerificationWorkspace? Workspace => null;
+
+            public Task<VerificationResult> VerifyAsync(CancellationToken ct = default)
+            {
+                owner.WasCalled = true;
+                owner.OnVerify?.Invoke();
+                return Task.FromResult(owner.result);
+            }
+
+            public void Dispose() => owner.SessionDisposed = true;
         }
     }
 

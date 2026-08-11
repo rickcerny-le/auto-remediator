@@ -59,10 +59,13 @@ internal sealed class RemediationRunner(
                              ?? throw new InvalidOperationException($"Could not resolve head of target branch '{repo.TargetBranch}'.");
 
             // Verify against the same commit the push will be based on, so the tree that was
-            // compiled and the commit's parent agree.
+            // compiled and the commit's parent agree. The session owns the extracted tree for the
+            // rest of the run so it can be verified again after remediation edits.
             run.Advance(RunStatus.Verifying);
             await runStore.SaveAsync(run, cancellationToken);
-            var verified = await verification.VerifyAsync(run.Id, repo, baseCommit, plan, settings, cancellationToken);
+
+            using var session = await verification.OpenAsync(run.Id, repo, baseCommit, plan, settings, cancellationToken);
+            var verified = await session.VerifyAsync(cancellationToken);
             run.Verified(verified.Outcome);
 
             if (verified.Outcome.Rejected)

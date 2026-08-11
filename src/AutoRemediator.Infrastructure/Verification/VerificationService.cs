@@ -18,10 +18,33 @@ public sealed record VerificationResult(
         => new(VerificationOutcome.Skipped(reason, logReference), []);
 }
 
-/// <summary>Restores and builds a computed change locally, before anything is pushed.</summary>
+/// <summary>
+/// A materialized working tree that can be verified more than once. The tree is downloaded and the
+/// computed edits applied when the session opens; each <see cref="VerifyAsync"/> compiles whatever
+/// the tree currently contains, so edits applied between calls — by the AI remediation loop — are
+/// picked up. Disposing deletes the tree.
+/// </summary>
+public interface IVerificationSession : IDisposable
+{
+    /// <summary>
+    /// The working tree, or null when it could not be prepared. Null means verification never ran,
+    /// which is not evidence against the change — <see cref="VerifyAsync"/> reports it as skipped.
+    /// </summary>
+    IVerificationWorkspace? Workspace { get; }
+
+    /// <summary>Restores and builds the tree's current contents. Callable repeatedly.</summary>
+    Task<VerificationResult> VerifyAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>Opens a verification session over a repository at a commit.</summary>
 public interface IVerificationService
 {
-    Task<VerificationResult> VerifyAsync(
+    /// <summary>
+    /// Downloads the repository at <paramref name="commitId"/>, applies the plan's edits, and returns
+    /// a session ready to verify. Does not throw when the tree cannot be prepared — the returned
+    /// session reports that as a skipped verification instead.
+    /// </summary>
+    Task<IVerificationSession> OpenAsync(
         Guid runId,
         ManagedRepository repository,
         string commitId,
@@ -36,10 +59,7 @@ internal sealed class VerificationService(
     IVerificationLogStore logs,
     ILogger<VerificationService> logger) : IVerificationService
 {
-    private static readonly TimeSpan RestoreTimeout = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(20);
-
-    public async Task<VerificationResult> VerifyAsync(
+    public async Task<IVerificationSession> OpenAsync(
         Guid runId,
         ManagedRepository repository,
         string commitId,
@@ -47,61 +67,110 @@ internal sealed class VerificationService(
         TargetingSettings settings,
         CancellationToken cancellationToken = default)
     {
-        IVerificationWorkspace? workspace = null;
-
         try
         {
-            try
-            {
-                workspace = await workspaces.CreateAsync(repository, commitId, plan.ChangedManifests, settings, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // No tree means nothing was verified — that is not evidence the bump is bad.
-                logger.LogWarning(ex, "Run {RunId}: could not materialize {Slug} for verification.", runId, repository.Slug);
-                return VerificationResult.Skipped($"the repository tree could not be prepared: {ex.Message}");
-            }
+            var workspace = await workspaces.CreateAsync(
+                repository, commitId, plan.ChangedManifests, settings, cancellationToken);
 
-            if (workspace.BuildTargets.Count == 0)
-            {
-                logger.LogWarning("Run {RunId}: {Slug} contains no solution or project to verify.", runId, repository.Slug);
-                return VerificationResult.Skipped("the repository contains no solution or project to build");
-            }
-
-            // Restore gates build: its failures are cheaper to reach and are exactly the class of
-            // problem feed-metadata alignment cannot see (third-party and transitive conflicts).
-            var restore = await RunForEachTargetAsync(
-                workspace, target => $"restore \"{target}\" --nologo", RestoreTimeout, cancellationToken);
-
-            if (!restore.Succeeded)
-            {
-                return await FailedAsync(runId, workspace, "restore", restore, cancellationToken);
-            }
-
-            var build = await RunForEachTargetAsync(
-                workspace,
-                target => $"build \"{target}\" --no-restore --nologo -p:GenerateFullPaths=true",
-                BuildTimeout,
-                cancellationToken);
-
-            if (!build.Succeeded)
-            {
-                return await FailedAsync(runId, workspace, "build", build, cancellationToken, restore.Output);
-            }
-
-            var logReference = await logs.StoreAsync(runId, Combine(restore.Output, build.Output), cancellationToken);
-            var lockFiles = await workspace.LockFileChangesAsync(cancellationToken);
-
-            logger.LogInformation(
-                "Run {RunId}: verified {Slug} locally ({LockFiles} lock file change(s)).",
-                runId, repository.Slug, lockFiles.Count);
-
-            return new VerificationResult(VerificationOutcome.Verified(logReference), lockFiles);
+            return new VerificationSession(workspace, repository, runId, dotnet, logs, logger);
         }
-        finally
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            workspace?.Dispose();
+            // No tree means nothing was verified — that is not evidence the bump is bad.
+            logger.LogWarning(ex, "Run {RunId}: could not materialize {Slug} for verification.", runId, repository.Slug);
+            return VerificationSession.Unavailable(
+                $"the repository tree could not be prepared: {ex.Message}");
         }
+    }
+}
+
+internal sealed class VerificationSession : IVerificationSession
+{
+    private static readonly TimeSpan RestoreTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(20);
+
+    private readonly ManagedRepository? _repository;
+    private readonly Guid _runId;
+    private readonly IDotnetCliRunner? _dotnet;
+    private readonly IVerificationLogStore? _logs;
+    private readonly ILogger? _logger;
+    private readonly VerificationResult? _unavailable;
+
+    private int _verifications;
+
+    internal VerificationSession(
+        IVerificationWorkspace workspace,
+        ManagedRepository repository,
+        Guid runId,
+        IDotnetCliRunner dotnet,
+        IVerificationLogStore logs,
+        ILogger logger)
+    {
+        Workspace = workspace;
+        _repository = repository;
+        _runId = runId;
+        _dotnet = dotnet;
+        _logs = logs;
+        _logger = logger;
+    }
+
+    private VerificationSession(VerificationResult unavailable) => _unavailable = unavailable;
+
+    /// <summary>A session over a tree that could not be prepared; verification reports it as skipped.</summary>
+    internal static VerificationSession Unavailable(string reason)
+        => new(VerificationResult.Skipped(reason));
+
+    public IVerificationWorkspace? Workspace { get; }
+
+    public async Task<VerificationResult> VerifyAsync(CancellationToken cancellationToken = default)
+    {
+        if (_unavailable is not null || Workspace is null)
+        {
+            return _unavailable ?? VerificationResult.Skipped("the repository tree is unavailable");
+        }
+
+        var workspace = Workspace;
+        var slug = _repository!.Slug;
+
+        if (workspace.BuildTargets.Count == 0)
+        {
+            _logger!.LogWarning("Run {RunId}: {Slug} contains no solution or project to verify.", _runId, slug);
+            return VerificationResult.Skipped("the repository contains no solution or project to build");
+        }
+
+        // Each verification stores its own log so a repeated verification cannot overwrite the
+        // evidence from an earlier attempt.
+        var attempt = ++_verifications;
+
+        // Restore gates build: its failures are cheaper to reach and are exactly the class of
+        // problem feed-metadata alignment cannot see (third-party and transitive conflicts).
+        var restore = await RunForEachTargetAsync(
+            workspace, target => $"restore \"{target}\" --nologo", RestoreTimeout, cancellationToken);
+
+        if (!restore.Succeeded)
+        {
+            return await FailedAsync(workspace, "restore", restore, attempt, cancellationToken);
+        }
+
+        var build = await RunForEachTargetAsync(
+            workspace,
+            target => $"build \"{target}\" --no-restore --nologo -p:GenerateFullPaths=true",
+            BuildTimeout,
+            cancellationToken);
+
+        if (!build.Succeeded)
+        {
+            return await FailedAsync(workspace, "build", build, attempt, cancellationToken, restore.Output);
+        }
+
+        var logReference = await StoreLogAsync(Combine(restore.Output, build.Output), attempt, cancellationToken);
+        var lockFiles = await workspace.LockFileChangesAsync(cancellationToken);
+
+        _logger!.LogInformation(
+            "Run {RunId}: verified {Slug} locally on verification {Attempt} ({LockFiles} lock file change(s)).",
+            _runId, slug, attempt, lockFiles.Count);
+
+        return new VerificationResult(VerificationOutcome.Verified(logReference), lockFiles);
     }
 
     /// <summary>
@@ -119,7 +188,7 @@ internal sealed class VerificationService(
 
         foreach (var target in workspace.BuildTargets)
         {
-            var result = await dotnet.RunAsync(arguments(target), workspace.Root, timeout, cancellationToken);
+            var result = await _dotnet!.RunAsync(arguments(target), workspace.Root, timeout, cancellationToken);
             combined.AppendLine(result.Output);
             last = result;
 
@@ -134,19 +203,19 @@ internal sealed class VerificationService(
 
     /// <summary>Classifies a failed stage and stores its log.</summary>
     private async Task<VerificationResult> FailedAsync(
-        Guid runId,
         IVerificationWorkspace workspace,
         string stage,
         CliResult result,
+        int attempt,
         CancellationToken cancellationToken,
         string? precedingOutput = null)
     {
         var combined = precedingOutput is null ? result.Output : Combine(precedingOutput, result.Output);
-        var logReference = await logs.StoreAsync(runId, combined, cancellationToken);
+        var logReference = await StoreLogAsync(combined, attempt, cancellationToken);
 
         if (result.TimedOut)
         {
-            logger.LogWarning("Run {RunId}: {Stage} timed out.", runId, stage);
+            _logger!.LogWarning("Run {RunId}: {Stage} timed out.", _runId, stage);
             return VerificationResult.Skipped($"{stage} exceeded its time limit", logReference);
         }
 
@@ -155,16 +224,25 @@ internal sealed class VerificationService(
         if (!DiagnosticParser.IsDependencyFailure(diagnostics, result.Output))
         {
             var reason = DiagnosticParser.DescribeEnvironmentFailure(diagnostics, result.Output);
-            logger.LogWarning("Run {RunId}: {Stage} failed for environmental reasons — {Reason}", runId, stage, reason);
+            _logger!.LogWarning("Run {RunId}: {Stage} failed for environmental reasons — {Reason}", _runId, stage, reason);
             return VerificationResult.Skipped($"{stage} could not be trusted: {reason}", logReference);
         }
 
-        logger.LogInformation(
-            "Run {RunId}: {Stage} rejected the change with {Count} diagnostic(s).", runId, stage, diagnostics.Count);
+        _logger!.LogInformation(
+            "Run {RunId}: {Stage} rejected the change with {Count} diagnostic(s).", _runId, stage, diagnostics.Count);
 
         return new VerificationResult(VerificationOutcome.DependencyFailure(diagnostics, logReference), []);
     }
 
+    private Task<string?> StoreLogAsync(string content, int attempt, CancellationToken cancellationToken)
+        => _logs!.StoreAsync(
+            _runId,
+            content,
+            attempt == 1 ? "verification.log" : $"verification-{attempt}.log",
+            cancellationToken);
+
     private static string Combine(string restore, string build)
         => $"=== dotnet restore ==={Environment.NewLine}{restore}{Environment.NewLine}=== dotnet build ==={Environment.NewLine}{build}";
+
+    public void Dispose() => Workspace?.Dispose();
 }

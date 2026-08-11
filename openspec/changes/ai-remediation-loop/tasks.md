@@ -21,9 +21,9 @@
 
 ## 4. Verification becomes re-runnable
 
-- [ ] 4.1 Move the workspace lifetime out of `VerificationService.VerifyAsync` into a session the runner owns, so one tree can be verified repeatedly
-- [ ] 4.2 Keep cleanup unconditional at the run level — the existing test asserting no workspace directory survives a run must pass unchanged
-- [ ] 4.3 Test that a second verification compiles edits applied since the first, and that the archive is downloaded only once per run
+- [x] 4.1 Move the workspace lifetime out of `VerificationService.VerifyAsync` into a session the runner owns, so one tree can be verified repeatedly
+- [x] 4.2 Keep cleanup unconditional at the run level — the existing test asserting no workspace directory survives a run must pass unchanged
+- [x] 4.3 Test that a second verification compiles edits applied since the first, and that the archive is downloaded only once per run
 
 ## 5. The agent
 
