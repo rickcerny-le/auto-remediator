@@ -27,10 +27,10 @@
 
 ## 5. The agent
 
-- [ ] 5.1 Change `IRemediationAgent` to take the diagnostics and the workspace and to return proposed file edits, replacing the `RemediationRunRequested` parameter that carries none of what the agent needs
-- [ ] 5.2 Implement `MafRemediationAgent` over the injected chat client: build the prompt from the diagnostics plus the source they point at, and parse the response into proposed edits
-- [ ] 5.3 Report token usage per attempt so the run-level budget can be enforced
-- [ ] 5.4 Test the agent against a fake chat client — prompt contents, response parsing, and malformed responses
+- [x] 5.1 Move the agent contract into `Domain` and redefine it: it takes the diagnostics plus a narrow source-reader abstraction and returns proposed file edits, replacing the `RemediationRunRequested` parameter that carries none of what the agent needs. It cannot take `IVerificationWorkspace` — that lives in `Infrastructure`, and `Infrastructure` must call the agent, so both directions would be needed. Keeping the contract in `Domain` also keeps MAF out of `Infrastructure`'s transitive closure, which is what `solution-scaffold` requires
+- [x] 5.2 Implement `MafRemediationAgent` over the injected chat client: build the prompt from the diagnostics plus the source they point at, and parse the response into proposed edits
+- [x] 5.3 Report token usage per attempt so the run-level budget can be enforced
+- [x] 5.4 Test the agent against a fake chat client — prompt contents, response parsing, and malformed responses
 
 ## 6. Edit safety boundary
 
