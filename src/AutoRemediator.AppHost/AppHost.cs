@@ -1,3 +1,4 @@
+using Aspire.Hosting.Foundry;
 using AutoRemediator.Contracts;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -13,6 +14,13 @@ var blobs = storage.AddBlobs("blobs");
 var serviceBus = builder.AddAzureServiceBus("servicebus")
     .RunAsEmulator();
 serviceBus.AddServiceBusQueue(RemediationQueues.RemediationRuns);
+
+// --- Model for the AI remediation loop (Slice 5 spike) ---
+// Runs locally in development; the deployed environment uses the provisioned Foundry account.
+// Account-level deployment: Foundry projects are unsupported when running locally.
+var foundry = builder.AddFoundry("foundry")
+    .RunAsFoundryLocal();
+var chat = foundry.AddDeployment("chat", FoundryModel.Local.Phi4);
 
 // --- API (minimal API, vertical slice) ---
 var api = builder.AddProject<Projects.AutoRemediator_Api>("api")
@@ -43,7 +51,11 @@ builder.AddProject<Projects.AutoRemediator_Worker_Remediation>("remediation")
     .WithReference(tables)
     .WithReference(blobs)
     .WithReference(serviceBus)
+    .WithReference(chat)
     .WaitFor(storage)
     .WaitFor(serviceBus);
+// Deliberately no WaitFor(chat): the model is a soft dependency. Waiting on it left the worker
+// idle indefinitely when Foundry Local was absent, stopping dependency updates entirely because
+// a repair capability was missing. An unavailable model costs repairs, not the pipeline.
 
 builder.Build().Run();

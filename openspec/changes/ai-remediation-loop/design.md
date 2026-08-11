@@ -93,6 +93,43 @@ It also replaces a bespoke configuration pair (`Agents:FoundryEndpoint`, `Agents
 
 Alternative considered: `CommunityToolkit.Aspire.Hosting.Ollama`. Container-based, so it needs no separate install and reuses the existing container runtime, and it offers a wider model catalogue. Rejected for the asymmetry — it gives no single-line path to the Azure Foundry account the deployed environment already provisions, so app code or configuration would have to differ by environment. Worth revisiting if a specific model justifies it.
 
+### Spike result: local Foundry stays local
+
+Task 1.1 ran before any further wiring. Findings:
+
+```
+AppHost with AddFoundry("foundry").RunAsFoundryLocal()
+  + foundry.AddDeployment("chat", FoundryModel.Local.Phi4)
+
+aspire start  →  ✅ AppHost started successfully
+  storage / servicebus / tables / blobs / api / web   Running · Healthy
+  foundry                                             FailedToStart
+  chat                                                Unknown
+  remediation                                         Waiting
+
+aspire logs foundry
+  Foundry Local could not be started. Ensure it's installed correctly:
+  (Error: An error occurred trying to start process 'foundry' … The system
+  cannot find the file specified.)
+```
+
+Two conclusions:
+
+1. **No Azure provisioning requirement.** The AppHost started with no subscription or location configured anywhere and produced no provisioning error. The `AddAzureProvisioning` concern does not bite when the resource runs locally, so Foundry Local is viable and the Ollama fallback is unnecessary.
+2. **`FoundryModel.Local.Phi4` and the account-level deployment API are correct as written** — the AppHost compiles and models the resource. Note `using Aspire.Hosting.Foundry;` is required for `FoundryModel`, as the package's rename notes warn.
+
+The spike also exposed the soft-dependency problem below, which is the more valuable finding.
+
+### The model is a soft dependency
+
+The spike's `WaitFor(chat)` on the remediation worker left it `Waiting` forever when Foundry Local was absent: no bumps, no verification, no pull requests — the entire system idle because a *repair* capability was missing.
+
+That is the wrong failure shape, and it contradicts how the rest of the pipeline behaves. Slice 4 established the principle: when something that would *improve* a run is unavailable, degrade and still produce the pull request. An unreachable feed yields a `Skipped` verification and an unverified PR rather than no PR. The model deserves the same treatment — it repairs breaks that would otherwise end the run, so its absence should cost repairs, not the whole pipeline.
+
+Decided: the remediation worker references the model deployment but **does not wait for it**. When the model is unavailable, a run that hits a compile break ends in `VerificationFailed` exactly as it does today without any agent, recording that remediation was unavailable. Mechanical bumps that verify cleanly are unaffected and keep opening pull requests.
+
+This makes Foundry Local a prerequisite for *exercising the loop*, not for running the system.
+
 ### Model capability is an environment property, not a constant
 
 A local Phi-4 and a deployed frontier model are not interchangeable at reading a changed API surface and repairing call sites. The loop is identical; the fix rate will not be.
@@ -103,9 +140,11 @@ So: success criteria are stated per environment and no test asserts a fix rate. 
 
 - **A plausible-looking edit that compiles but is wrong** — the worst outcome here, because green is the signal the whole slice trusts → Not solvable by the loop, and not claimed to be. Mitigated by disclosure rather than by pretence: the pull request states that it contains AI-authored source edits, gives the attempt count, and links the full transcript, so review is informed. The repository's own CI, which runs the tests this system does not, remains the authority.
 
-- **`AddFoundry` implicitly calls `AddAzureProvisioning`**, which wants a subscription and location — potentially requiring Azure configuration just to start locally, which would defeat the local-first goal outright → **Unresolved; spiked before any wiring.** Task 1.1 exists solely to answer it. If `RunAsFoundryLocal()` does not sidestep provisioning, the fallback is the Ollama integration, which has no such coupling.
+- **`AddFoundry` implicitly calls `AddAzureProvisioning`**, which wants a subscription and location — potentially requiring Azure configuration just to start locally → **Resolved by the task 1.1 spike: it does not.** `AddFoundry("foundry").RunAsFoundryLocal()` plus an account-level deployment starts with no Azure subscription or location configured anywhere, and no provisioning error appears. The Ollama fallback is therefore not needed. See "Spike result" below.
 
-- **Foundry Local is a new machine prerequisite** → Accepted, but it changes the "clone and run" story, so it belongs in the README alongside the container runtime. Unlike a cloud dependency it can be installed once and used offline.
+- **Foundry Local is a new machine prerequisite** → Accepted, but it changes the "clone and run" story, so it belongs in the README alongside the container runtime. Unlike a cloud dependency it can be installed once and used offline. The spike showed the failure is clear and self-describing when it is missing (`Foundry Local could not be started. Ensure it's installed correctly`), which is the good case.
+
+- **A missing or unhealthy model must not block the rest of the system** → The spike surfaced this: with `WaitFor(chat)` on the remediation worker and Foundry Local absent, `foundry` reported `FailedToStart` and the worker sat in `Waiting` indefinitely — so no dependency updates happened at all, for a reason unrelated to dependencies. Resolved by not gating the worker on the model; see "The model is a soft dependency" below.
 
 - **Foundry Projects are unsupported under `RunAsFoundryLocal()`** → Use account-level deployments, which is all this slice needs. Worth knowing before anyone reaches for a project-scoped feature.
 
