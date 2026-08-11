@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using AutoRemediator.Contracts;
+using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Alignment;
 using AutoRemediator.Infrastructure.Analysis;
 using AutoRemediator.Infrastructure.AzureDevOps;
@@ -12,6 +13,7 @@ using AutoRemediator.Infrastructure.Storage;
 using AutoRemediator.Infrastructure.Verification;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -91,6 +93,16 @@ public static class InfrastructureExtensions
         builder.Services.AddSingleton<IDotnetCliRunner, DotnetCliRunner>();
         builder.Services.AddSingleton<IVerificationLogStore, BlobVerificationLogStore>();
         builder.Services.AddScoped<IVerificationService, VerificationService>();
+
+        // AI repair loop. The agent itself is registered by the Agents project; the loop only needs
+        // the contract, so infrastructure stays free of the agent framework.
+        builder.Services.AddOptions<RemediationLoopOptions>()
+            .Bind(config.GetSection(RemediationLoopOptions.SectionName));
+        builder.Services.AddScoped<IRemediationLoop, RemediationLoop>();
+
+        // Fallback so infrastructure composes without the agents library at all. A host that calls
+        // AddAgents() registers the real agent afterwards, which wins.
+        builder.Services.TryAddScoped<IRemediationAgent, UnavailableRemediationAgent>();
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IRemediationRunner, RemediationRunner>();

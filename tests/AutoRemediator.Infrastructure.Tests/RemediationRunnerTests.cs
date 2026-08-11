@@ -143,6 +143,174 @@ public class RemediationRunnerTests
         Assert.Null(run.Verification);
     }
 
+    // ---- The AI remediation loop ----------------------------------------------------
+
+    private static VerificationOutcome CompileBreak =>
+        VerificationOutcome.DependencyFailure(
+            [new VerificationDiagnostic("CS1061", "'Client' has no member 'SubmitAsync'", "src/App/Program.cs", 3, 42)]);
+
+    private static VerificationOutcome RestoreConflict =>
+        VerificationOutcome.DependencyFailure(
+            [new VerificationDiagnostic("NU1107", "Version conflict detected for Orion180.Common")]);
+
+    [Fact]
+    public async Task A_compile_break_repaired_on_the_second_attempt_opens_a_pr()
+    {
+        var ado = new FakeAdo();
+        var loop = new FakeLoop(new RemediationLoopResult(
+            Attempts: 2, Repaired: true,
+            Result: new VerificationResult(VerificationOutcome.Verified("runs/x/verify-2.log"), []),
+            Transcript: "## Attempt 2\n- applied `src/App/Program.cs`"));
+
+        var run = await RunAsync(
+            SinglePlan, ado, new RecordingRunStore(),
+            new FakeVerification(new VerificationResult(CompileBreak, [])),
+            loop);
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Equal(1, ado.Pushes);
+        Assert.NotNull(run.PullRequestUrl);
+        Assert.Equal(2, run.RemediationAttempts);
+        Assert.True(loop.WasCalled);
+    }
+
+    [Fact]
+    public async Task A_repaired_run_discloses_ai_authored_edits_with_the_attempt_count()
+    {
+        var ado = new FakeAdo();
+        var loop = new FakeLoop(new RemediationLoopResult(
+            2, true, new VerificationResult(VerificationOutcome.Verified(), []), "transcript"));
+
+        await RunAsync(SinglePlan, ado, new RecordingRunStore(),
+            new FakeVerification(new VerificationResult(CompileBreak, [])), loop);
+
+        Assert.Contains("AI-authored source edits", ado.LastDescription);
+        Assert.Contains("2 attempt(s)", ado.LastDescription);
+    }
+
+    [Fact]
+    public async Task An_exhausted_loop_ends_in_VerificationFailed_with_no_pr()
+    {
+        var ado = new FakeAdo();
+        var store = new RecordingRunStore();
+        var loop = new FakeLoop(new RemediationLoopResult(
+            Attempts: 3, Repaired: false,
+            Result: new VerificationResult(CompileBreak, []),
+            Transcript: "reached the maximum of 3 attempt(s)"));
+
+        var run = await RunAsync(
+            SinglePlan, ado, store, new FakeVerification(new VerificationResult(CompileBreak, [])), loop);
+
+        Assert.Equal(RunStatus.VerificationFailed, run.Status);
+        Assert.Equal(0, ado.Pushes);
+        Assert.Null(run.PullRequestUrl);
+        Assert.Null(run.Error);
+        Assert.Equal(3, run.RemediationAttempts);
+        Assert.Equal("CS1061", run.Verification?.Diagnostics.Single().Code);
+        Assert.Equal(RunStatus.VerificationFailed, store.Last?.Status);
+    }
+
+    [Fact]
+    public async Task A_restore_conflict_never_invokes_the_loop()
+    {
+        var loop = FakeLoop.NoAgent();
+
+        var run = await RunAsync(
+            SinglePlan, new FakeAdo(), new RecordingRunStore(),
+            new FakeVerification(new VerificationResult(RestoreConflict, [])), loop);
+
+        // Version math is not the agent's to fix, and it must not get the chance to edit a manifest.
+        Assert.False(loop.WasCalled);
+        Assert.Equal(RunStatus.VerificationFailed, run.Status);
+        Assert.Null(run.RemediationAttempts);
+    }
+
+    [Fact]
+    public async Task A_verified_change_never_invokes_the_loop()
+    {
+        var loop = FakeLoop.NoAgent();
+
+        var run = await RunAsync(SinglePlan, new FakeAdo(), new RecordingRunStore(), verification: null, loop);
+
+        Assert.False(loop.WasCalled);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Null(run.RemediationAttempts);
+    }
+
+    [Fact]
+    public async Task A_skipped_verification_never_invokes_the_loop()
+    {
+        var ado = new FakeAdo();
+        var loop = FakeLoop.NoAgent();
+        var skipped = VerificationOutcome.Skipped("the configured feed was unreachable");
+
+        var run = await RunAsync(
+            SinglePlan, ado, new RecordingRunStore(), new FakeVerification(new VerificationResult(skipped, [])), loop);
+
+        Assert.False(loop.WasCalled);
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Equal(1, ado.Pushes);
+        Assert.DoesNotContain("AI-authored", ado.LastDescription);
+    }
+
+    [Fact]
+    public async Task A_run_with_no_agent_involvement_claims_no_ai_authorship()
+    {
+        var ado = new FakeAdo();
+
+        await RunAsync(SinglePlan, ado, new RecordingRunStore());
+
+        Assert.DoesNotContain("AI-authored", ado.LastDescription);
+    }
+
+    [Fact]
+    public async Task The_transcript_is_stored_for_a_run_that_remediated()
+    {
+        var logs = new RecordingLogs();
+        var loop = new FakeLoop(new RemediationLoopResult(
+            1, true, new VerificationResult(VerificationOutcome.Verified(), []), "the transcript body"));
+
+        var run = await RunAsync(
+            SinglePlan, new FakeAdo(), new RecordingRunStore(),
+            new FakeVerification(new VerificationResult(CompileBreak, [])), loop, logs);
+
+        Assert.Equal("the transcript body", logs.Stored["remediation-transcript.md"]);
+        Assert.EndsWith("remediation-transcript.md", run.RemediationTranscriptReference);
+    }
+
+    [Fact]
+    public async Task A_transcript_that_cannot_be_stored_does_not_change_the_outcome()
+    {
+        var logs = new RecordingLogs { FailToStore = true };
+        var loop = new FakeLoop(new RemediationLoopResult(
+            1, true, new VerificationResult(VerificationOutcome.Verified(), []), "the transcript body"));
+
+        var run = await RunAsync(
+            SinglePlan, new FakeAdo(), new RecordingRunStore(),
+            new FakeVerification(new VerificationResult(CompileBreak, [])), loop, logs);
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Equal(1, run.RemediationAttempts);
+        Assert.Null(run.RemediationTranscriptReference);
+    }
+
+    [Fact]
+    public async Task Writes_only_ever_reach_the_update_branch_via_a_pull_request()
+    {
+        var ado = new FakeAdo();
+        var loop = new FakeLoop(new RemediationLoopResult(
+            1, true, new VerificationResult(VerificationOutcome.Verified(), []), "t"));
+
+        await RunAsync(SinglePlan, ado, new RecordingRunStore(),
+            new FakeVerification(new VerificationResult(CompileBreak, [])), loop);
+
+        // Including on an agent-repaired run, the target branch is never written to directly.
+        Assert.Equal(RemediationRunner.UpdateBranch, ado.LastPushBranch);
+        Assert.NotEqual(Repo.TargetBranch, ado.LastPushBranch);
+        Assert.Equal(RemediationRunner.UpdateBranch, ado.LastPrSource);
+        Assert.Equal(Repo.TargetBranch, ado.LastPrTarget);
+    }
+
     [Fact]
     public async Task Pr_description_always_names_the_repository_ci_as_the_authority()
     {
@@ -203,7 +371,9 @@ public class RemediationRunnerTests
         RepositoryUpdatePlan plan,
         FakeAdo ado,
         RecordingRunStore store,
-        FakeVerification? verification = null)
+        FakeVerification? verification = null,
+        FakeLoop? loop = null,
+        RecordingLogs? logs = null)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
@@ -222,8 +392,12 @@ public class RemediationRunnerTests
         builder.Services.AddSingleton<IUpdatePlanner>(new FakePlanner(plan));
         builder.Services.AddSingleton<IAzureDevOpsClient>(ado);
         builder.Services.AddSingleton<IRemediationRunStore>(store);
+        builder.Services.RemoveAll<IRemediationLoop>();
+        builder.Services.RemoveAll<IVerificationLogStore>();
         builder.Services.AddSingleton<IVerificationService>(
             verification ?? new FakeVerification(new VerificationResult(VerificationOutcome.Verified(), [])));
+        builder.Services.AddSingleton<IRemediationLoop>(loop ?? FakeLoop.NoAgent());
+        builder.Services.AddSingleton<IVerificationLogStore>(logs ?? new RecordingLogs());
 
         await using var provider = builder.Services.BuildServiceProvider();
         return await provider.GetRequiredService<IRemediationRunner>().RunAsync(Request, TestContext.Current.CancellationToken);
@@ -287,6 +461,9 @@ public class RemediationRunnerTests
         public int Pushes { get; private set; }
         public string? LastDescription { get; private set; }
         public IReadOnlyList<FileChange>? LastChanges { get; private set; }
+        public string? LastPushBranch { get; private set; }
+        public string? LastPrSource { get; private set; }
+        public string? LastPrTarget { get; private set; }
 
         public Task<bool> RepositoryExistsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult(true);
         public Task<IReadOnlyList<RepositoryFile>> GetManifestsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RepositoryFile>>([]);
@@ -298,13 +475,61 @@ public class RemediationRunnerTests
             if (ThrowOnPush) throw new InvalidOperationException("push failed");
             Pushes++;
             LastChanges = changes;
+            LastPushBranch = branch;
             return Task.CompletedTask;
         }
         public Task<string> EnsurePullRequestAsync(ManagedRepository r, string s, string t, string title, string desc, CancellationToken ct = default)
         {
             LastDescription = desc;
+            LastPrSource = s;
+            LastPrTarget = t;
             return Task.FromResult(PrUrl);
         }
+    }
+
+    private sealed class FakeLoop : IRemediationLoop
+    {
+        private readonly RemediationLoopResult? _result;
+
+        public FakeLoop(RemediationLoopResult result) => _result = result;
+
+        private FakeLoop() { }
+
+        /// <summary>
+        /// A loop that repairs nothing and echoes the rejection back — what happens when no model is
+        /// available. The default, so a test must opt in to a repair rather than get one for free.
+        /// </summary>
+        public static FakeLoop NoAgent() => new();
+
+        public bool WasCalled { get; private set; }
+
+        public Task<RemediationLoopResult> RunAsync(
+            Guid runId, IVerificationSession session, VerificationResult rejected, CancellationToken ct = default)
+        {
+            WasCalled = true;
+            return Task.FromResult(
+                _result ?? new RemediationLoopResult(0, false, rejected, "no model is configured"));
+        }
+    }
+
+    private sealed class RecordingLogs : IVerificationLogStore
+    {
+        public Dictionary<string, string> Stored { get; } = [];
+        public bool FailToStore { get; set; }
+
+        public Task<string?> StoreAsync(Guid runId, string content, string name = "verification.log", CancellationToken ct = default)
+        {
+            if (FailToStore)
+            {
+                return Task.FromResult<string?>(null);
+            }
+
+            Stored[name] = content;
+            return Task.FromResult<string?>($"{runId}/{name}");
+        }
+
+        public Task<string?> ReadAsync(string reference, CancellationToken ct = default)
+            => Task.FromResult<string?>(null);
     }
 
     private sealed class RecordingRunStore : IRemediationRunStore

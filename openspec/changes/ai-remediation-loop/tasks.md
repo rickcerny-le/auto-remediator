@@ -40,28 +40,28 @@
 
 ## 7. The loop
 
-- [ ] 7.1 Insert the `Remediating` stage in `RemediationRunner`, entered only when verification rejected the change with compile (`CS`) diagnostics
-- [ ] 7.2 Loop: agent → apply permitted edits → re-verify, ending on success or when a bound trips
-- [ ] 7.3 On success, include the agent's source edits in the pushed change set
-- [ ] 7.4 On exhaustion, end in `VerificationFailed` with the final diagnostics, attempt count and transcript, and no pull request
-- [ ] 7.5 Test the paths end to end with a fake chat client: repaired-on-second-attempt, exhausted-after-max-attempts, budget-exhausted-midway, restore-failure-never-invokes-agent, skipped-verification-never-invokes-agent
+- [x] 7.1 Insert the `Remediating` stage in `RemediationRunner`, entered only when verification rejected the change with compile (`CS`) diagnostics
+- [x] 7.2 Loop: agent → apply permitted edits → re-verify, ending on success or when a bound trips
+- [x] 7.3 On success, include the agent's source edits in the pushed change set
+- [x] 7.4 On exhaustion, end in `VerificationFailed` with the final diagnostics, attempt count and transcript, and no pull request
+- [x] 7.5 Test the paths end to end with a fake chat client: repaired-on-second-attempt, exhausted-after-max-attempts, budget-exhausted-midway, restore-failure-never-invokes-agent, skipped-verification-never-invokes-agent
 
 ## 8. Transcript artifact
 
-- [ ] 8.1 Capture the transcript — diagnostics presented, edits proposed with applied/rejected outcome, and each attempt's verification result — and store it as a run artifact next to the verification logs
-- [ ] 8.2 Ensure a failed transcript upload never changes the run's outcome
-- [ ] 8.3 Test that a transcript is stored for both success and exhaustion, and that rejected edits appear in it
+- [x] 8.1 Capture the transcript — diagnostics presented, edits proposed with applied/rejected outcome, and each attempt's verification result — and store it as a run artifact next to the verification logs
+- [x] 8.2 Ensure a failed transcript upload never changes the run's outcome
+- [x] 8.3 Test that a transcript is stored for both success and exhaustion, and that rejected edits appear in it
 
 ## 9. Disclosure and observability
 
-- [ ] 9.1 Add the AI disclosure to the pull-request description: that it contains AI-authored source edits, the attempt count, and the transcript link
-- [ ] 9.2 Assert a run with no agent involvement makes no such claim
+- [x] 9.1 Add the AI disclosure to the pull-request description: that it contains AI-authored source edits, the attempt count, and the transcript link
+- [x] 9.2 Assert a run with no agent involvement makes no such claim
 - [ ] 9.3 Extend the run detail DTO, endpoint and transcript route; extend `RunsEndpointTests`
 - [ ] 9.4 Show attempts and the transcript link on the Run detail page
 
 ## 10. Safety and verification of the whole slice
 
-- [ ] 10.1 Assert as a test that writes go only to the per-repo update branch and always through a pull request, including on agent-repaired runs
+- [x] 10.1 Assert as a test that writes go only to the per-repo update branch and always through a pull request, including on agent-repaired runs
 - [ ] 10.2 Run the full test suite and confirm no regression in analysis, policy, alignment, or Slice 4's verification behavior
 - [ ] 10.3 Exercise the loop locally end to end against a deliberately broken bump, using the local model, and confirm the transcript and PR disclosure read correctly
 - [ ] 10.4 Document the expected repair effectiveness per environment, noting that the local development model and the deployed model differ in capability and that no test asserts a repair rate

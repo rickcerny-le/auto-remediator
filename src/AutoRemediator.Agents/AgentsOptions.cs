@@ -15,17 +15,9 @@ public sealed class AgentsOptions
     public const string ChatConnectionName = "chat";
 
     /// <summary>
-    /// Most repair attempts for one run. A compile break that has not converged in a few
-    /// attempts is usually the wrong shape of problem rather than one more edit away.
+    /// Longest a single model call may take before its attempt is abandoned. The attempt count and
+    /// token budget belong to the loop rather than the agent, and are bound from this same section
+    /// by <c>RemediationLoopOptions</c> in the orchestration layer.
     /// </summary>
-    public int MaxAttempts { get; set; } = 3;
-
-    /// <summary>
-    /// Ceiling on tokens consumed across all attempts in a single run. Holds regardless of
-    /// how cheap any individual attempt looks.
-    /// </summary>
-    public int TokenBudget { get; set; } = 120_000;
-
-    /// <summary>Longest a single model call may take before its attempt is abandoned.</summary>
     public TimeSpan AttemptTimeout { get; set; } = TimeSpan.FromMinutes(3);
 }

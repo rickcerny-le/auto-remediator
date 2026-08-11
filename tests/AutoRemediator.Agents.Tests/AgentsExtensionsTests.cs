@@ -22,11 +22,9 @@ public class AgentsExtensionsTests
     }
 
     [Fact]
-    public void Loop_bounds_bind_from_configuration()
+    public void The_attempt_timeout_binds_from_configuration()
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Configuration["Agents:MaxAttempts"] = "5";
-        builder.Configuration["Agents:TokenBudget"] = "250000";
         builder.Configuration["Agents:AttemptTimeout"] = "00:01:30";
 
         builder.AddAgents();
@@ -34,13 +32,11 @@ public class AgentsExtensionsTests
         using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<AgentsOptions>>().Value;
 
-        Assert.Equal(5, options.MaxAttempts);
-        Assert.Equal(250_000, options.TokenBudget);
         Assert.Equal(TimeSpan.FromMinutes(1.5), options.AttemptTimeout);
     }
 
     [Fact]
-    public void Loop_bounds_have_defaults()
+    public void The_attempt_timeout_has_a_default()
     {
         var builder = Host.CreateApplicationBuilder();
         builder.AddAgents();
@@ -48,8 +44,6 @@ public class AgentsExtensionsTests
         using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<AgentsOptions>>().Value;
 
-        Assert.Equal(3, options.MaxAttempts);
-        Assert.True(options.TokenBudget > 0);
         Assert.True(options.AttemptTimeout > TimeSpan.Zero);
     }
 
