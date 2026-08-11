@@ -36,6 +36,9 @@ internal sealed class RemediationRunEntity : ITableEntity
     public string? VerificationDiagnosticsJson { get; set; }
     public string? VerificationLogReference { get; set; }
 
+    public int? RemediationAttempts { get; set; }
+    public string? RemediationTranscriptReference { get; set; }
+
     public static RemediationRunEntity FromDomain(RemediationRun run) => new()
     {
         PartitionKey = run.RepositoryId.ToString(),
@@ -53,6 +56,8 @@ internal sealed class RemediationRunEntity : ITableEntity
             ? JsonSerializer.Serialize(v.Diagnostics)
             : null,
         VerificationLogReference = run.Verification?.LogReference,
+        RemediationAttempts = run.RemediationAttempts,
+        RemediationTranscriptReference = run.RemediationTranscriptReference,
     };
 
     public RemediationRun ToDomain()
@@ -61,7 +66,8 @@ internal sealed class RemediationRunEntity : ITableEntity
         var status = Enum.TryParse<RunStatus>(Status, out var s) ? s : RunStatus.Reading;
         return RemediationRun.Restore(
             Guid.Parse(RowKey), Guid.Parse(PartitionKey), RepositorySlug, status,
-            StartedAtUtc, FinishedAtUtc, updates, PullRequestUrl, Error, ToVerification());
+            StartedAtUtc, FinishedAtUtc, updates, PullRequestUrl, Error, ToVerification(),
+            RemediationAttempts, RemediationTranscriptReference);
     }
 
     private VerificationOutcome? ToVerification()

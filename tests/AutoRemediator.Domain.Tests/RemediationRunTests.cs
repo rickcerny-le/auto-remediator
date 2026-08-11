@@ -135,4 +135,94 @@ public class RemediationRunTests
     {
         Assert.Throws<ArgumentException>(() => VerificationOutcome.Skipped("  "));
     }
+
+    // ---- AI remediation loop --------------------------------------------------------
+
+    [Fact]
+    public void A_run_that_never_remediated_has_no_attempts()
+    {
+        var run = NewRun();
+        run.Verified(VerificationOutcome.Verified());
+
+        Assert.Null(run.RemediationAttempts);
+        Assert.Null(run.RemediationTranscriptReference);
+    }
+
+    [Fact]
+    public void Remediated_records_attempts_without_ending_the_run()
+    {
+        var run = NewRun();
+        run.Advance(RunStatus.Remediating);
+
+        run.Remediated(attempts: 2, transcriptReference: "runs/abc/transcript.log");
+
+        Assert.Equal(2, run.RemediationAttempts);
+        Assert.Equal("runs/abc/transcript.log", run.RemediationTranscriptReference);
+        Assert.Equal(RunStatus.Remediating, run.Status);
+        Assert.Null(run.FinishedAtUtc);
+    }
+
+    [Fact]
+    public void Zero_attempts_is_distinct_from_never_having_remediated()
+    {
+        // The loop was entered but produced no attempt — e.g. the budget was already spent.
+        var entered = NewRun();
+        entered.Remediated(attempts: 0, transcriptReference: null);
+
+        var neverEntered = NewRun();
+
+        Assert.Equal(0, entered.RemediationAttempts);
+        Assert.Null(neverEntered.RemediationAttempts);
+    }
+
+    [Fact]
+    public void A_repaired_run_completes_with_its_attempt_count()
+    {
+        var run = NewRun();
+        run.Verified(VerificationOutcome.Verified("runs/abc/verify.log"));
+        run.Remediated(attempts: 2, transcriptReference: "runs/abc/transcript.log");
+        run.Completed(Updates(), "https://dev.azure.com/pr/1", Finished);
+
+        Assert.Equal(RunStatus.Completed, run.Status);
+        Assert.Equal(2, run.RemediationAttempts);
+        Assert.Equal("https://dev.azure.com/pr/1", run.PullRequestUrl);
+    }
+
+    [Fact]
+    public void An_exhausted_loop_still_lands_in_VerificationFailed()
+    {
+        var run = NewRun();
+        var outcome = VerificationOutcome.DependencyFailure(
+            [new VerificationDiagnostic("CS1061", "no member 'SubmitAsync'", "src/Foo.cs", 6, 16)]);
+
+        run.Remediated(attempts: 3, transcriptReference: "runs/abc/transcript.log");
+        run.VerificationFailed(Updates(), outcome, Finished);
+
+        // The floor never drops below what the same rejection produces with no agent at all.
+        Assert.Equal(RunStatus.VerificationFailed, run.Status);
+        Assert.Null(run.PullRequestUrl);
+        Assert.Null(run.Error);
+        Assert.Equal(3, run.RemediationAttempts);
+        Assert.Equal("CS1061", run.Verification?.Diagnostics.Single().Code);
+    }
+
+    [Fact]
+    public void Negative_attempts_are_rejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => NewRun().Remediated(-1, null));
+    }
+
+    [Fact]
+    public void Restore_round_trips_the_remediation_attempts()
+    {
+        var run = RemediationRun.Restore(
+            Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", RunStatus.Completed,
+            Started, Finished, Updates(), "https://dev.azure.com/pr/1", error: null,
+            verification: VerificationOutcome.Verified(),
+            remediationAttempts: 2,
+            remediationTranscriptReference: "runs/abc/transcript.log");
+
+        Assert.Equal(2, run.RemediationAttempts);
+        Assert.Equal("runs/abc/transcript.log", run.RemediationTranscriptReference);
+    }
 }

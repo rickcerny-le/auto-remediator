@@ -14,10 +14,10 @@
 
 ## 3. Domain: attempts and transcript
 
-- [ ] 3.1 Add `Remediating` to `RunStatus`
-- [ ] 3.2 Record the remediation attempt count and transcript reference on `RemediationRun`, threaded through `Restore`
-- [ ] 3.3 Persist both in `RemediationRunStore` and extend the round-trip tests
-- [ ] 3.4 Unit-test the new transitions, including that an exhausted loop still lands in `VerificationFailed`
+- [x] 3.1 Add `Remediating` to `RunStatus`
+- [x] 3.2 Record the remediation attempt count and transcript reference on `RemediationRun`, threaded through `Restore`
+- [x] 3.3 Persist both in `RemediationRunStore` and extend the round-trip tests
+- [x] 3.4 Unit-test the new transitions, including that an exhausted loop still lands in `VerificationFailed`
 
 ## 4. Verification becomes re-runnable
 

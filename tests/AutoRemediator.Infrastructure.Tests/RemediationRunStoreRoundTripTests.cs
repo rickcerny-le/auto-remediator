@@ -151,6 +151,51 @@ public class RemediationRunStoreRoundTripTests
     }
 
     [Fact]
+    public async Task Repaired_run_round_trips_its_remediation_attempts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var provider = BuildProvider();
+        var store = provider.GetRequiredService<IRemediationRunStore>();
+
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        run.Verified(VerificationOutcome.Verified("runs/abc/verify.log"));
+        run.Remediated(attempts: 2, transcriptReference: "runs/abc/transcript.log");
+        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/3", DateTimeOffset.UtcNow);
+
+        if (!await TrySaveAsync(store, run, ct))
+        {
+            return;
+        }
+
+        var saved = await store.GetAsync(run.Id, ct);
+        Assert.NotNull(saved);
+        Assert.Equal(2, saved!.RemediationAttempts);
+        Assert.Equal("runs/abc/transcript.log", saved.RemediationTranscriptReference);
+    }
+
+    [Fact]
+    public async Task Run_that_never_remediated_round_trips_null_attempts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var provider = BuildProvider();
+        var store = provider.GetRequiredService<IRemediationRunStore>();
+
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        run.Verified(VerificationOutcome.Verified());
+        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/4", DateTimeOffset.UtcNow);
+
+        if (!await TrySaveAsync(store, run, ct))
+        {
+            return;
+        }
+
+        var saved = await store.GetAsync(run.Id, ct);
+        Assert.NotNull(saved);
+        Assert.Null(saved!.RemediationAttempts);
+        Assert.Null(saved.RemediationTranscriptReference);
+    }
+
+    [Fact]
     public async Task Run_that_never_verified_round_trips_a_null_outcome()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -9,6 +9,9 @@ public enum RunStatus
     Analyzing,
     Applying,
     Verifying,
+
+    /// <summary>The AI loop is attempting to repair a compile break. Entered only when verification rejected the change with compiler diagnostics.</summary>
+    Remediating,
     Pushing,
     CreatingPr,
     Completed,
@@ -69,10 +72,29 @@ public sealed class RemediationRun : Entity<Guid>
     /// <summary>The local verification result, or null when verification was not reached.</summary>
     public VerificationOutcome? Verification { get; private set; }
 
+    /// <summary>
+    /// How many AI repair attempts were made, or null when the loop never ran. Zero is
+    /// meaningful and distinct from null: the loop was entered but produced no attempt, for
+    /// example because the token budget was already exhausted.
+    /// </summary>
+    public int? RemediationAttempts { get; private set; }
+
+    /// <summary>Blob reference for the AI transcript, or null when the loop never ran or it could not be stored.</summary>
+    public string? RemediationTranscriptReference { get; private set; }
+
     public void Advance(RunStatus status) => Status = status;
 
     /// <summary>Records the local verification result. Does not itself end the run.</summary>
     public void Verified(VerificationOutcome outcome) => Verification = Guard.AgainstNull(outcome);
+
+    /// <summary>Records what the AI repair loop did. Does not itself end the run.</summary>
+    public void Remediated(int attempts, string? transcriptReference)
+    {
+        RemediationAttempts = attempts >= 0
+            ? attempts
+            : throw new ArgumentOutOfRangeException(nameof(attempts), attempts, "Attempts cannot be negative.");
+        RemediationTranscriptReference = transcriptReference;
+    }
 
     public void Completed(IEnumerable<DependencyUpdate> updates, string pullRequestUrl, DateTimeOffset finishedAtUtc)
     {
@@ -123,7 +145,9 @@ public sealed class RemediationRun : Entity<Guid>
         IEnumerable<DependencyUpdate> updates,
         string? pullRequestUrl,
         string? error,
-        VerificationOutcome? verification = null)
+        VerificationOutcome? verification = null,
+        int? remediationAttempts = null,
+        string? remediationTranscriptReference = null)
     {
         var run = new RemediationRun(id, repositoryId, repositorySlug, startedAtUtc)
         {
@@ -132,6 +156,8 @@ public sealed class RemediationRun : Entity<Guid>
             PullRequestUrl = pullRequestUrl,
             Error = error,
             Verification = verification,
+            RemediationAttempts = remediationAttempts,
+            RemediationTranscriptReference = remediationTranscriptReference,
         };
         run._updates.AddRange(updates);
         return run;
