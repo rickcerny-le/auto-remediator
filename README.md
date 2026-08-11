@@ -44,8 +44,16 @@ depend on `Infrastructure`/`Contracts`/`ServiceDefaults` (the remediation worker
 
 - .NET 10 SDK (built with `10.0.300`)
 - .NET Aspire templates (`dotnet new install Aspire.ProjectTemplates`) — 13.4.6
+- The Aspire CLI (`dotnet tool install -g Aspire.Cli`) — 13.4.6. Use it to start and stop
+  the app; see [Run locally](#run-locally-aspire).
 - A container runtime (Docker Desktop or Podman) **running**, to start the local
   Azurite (Storage) and Azure Service Bus emulators when you run the AppHost.
+- [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/get-started)
+  — **only needed to exercise the AI remediation loop.** The AppHost models the model
+  resource so it runs locally in development; deployed environments use the provisioned
+  Azure AI Foundry account instead. The model is a *soft* dependency: without Foundry
+  Local the rest of the system runs normally and still opens pull requests, and only
+  AI repair of compile breaks is unavailable.
 
 ## Build & test
 
@@ -57,13 +65,20 @@ dotnet test  AutoRemediator.sln     # Playwright functional test self-skips (no 
 ## Run locally (Aspire)
 
 ```bash
-dotnet run --project src/AutoRemediator.AppHost
+aspire start          # starts in the background and prints the dashboard URL
+aspire describe       # per-resource state and health
+aspire stop           # also the fix for file locks (MSB3491 / CS2012) during a build
 ```
 
 This starts the Aspire dashboard and provisions the Azurite Storage emulator (Tables +
-Blobs) and the Service Bus emulator, then launches the API, Web, and both workers with
-their connection information injected — no connection strings are hard-coded in project
-code. A running container runtime is required.
+Blobs), the Service Bus emulator, and the local model, then launches the API, Web, and
+both workers with their connection information injected — no connection strings are
+hard-coded in project code. A running container runtime is required.
+
+Use the Aspire CLI rather than `dotnet run` on the AppHost: `dotnet run` bypasses the
+CLI's lifecycle management and leaves orphaned processes holding file locks on `bin/` and
+`obj/`. If a build fails with `MSB3491` or `CS2012`, the app is still running — `aspire
+stop` releases the locks.
 
 ### Functional (Playwright) smoke test
 

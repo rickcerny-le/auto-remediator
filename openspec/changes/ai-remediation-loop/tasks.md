@@ -2,14 +2,14 @@
 
 - [x] 1.1 Add `Aspire.Hosting.Foundry` to the AppHost and confirm whether `AddFoundry(...).RunAsFoundryLocal()` starts **without** any Azure subscription or location configured — `AddFoundry` implicitly calls `AddAzureProvisioning`, and if that demands Azure configuration at startup the local-first goal is broken
 - [x] 1.2 ~~If it does demand it, evaluate `CommunityToolkit.Aspire.Hosting.Ollama` as the local path~~ — **not needed.** The spike showed no provisioning requirement; Foundry Local is viable. Result recorded in `design.md`
-- [ ] 1.3 Record the Foundry Local install prerequisite in the README alongside the container runtime
+- [x] 1.3 Record the Foundry Local install prerequisite in the README alongside the container runtime
 - [x] 1.4 Make the model a **soft** dependency — the spike's `WaitFor(chat)` left the worker idle indefinitely when Foundry Local was absent, stopping dependency updates because a repair capability was missing
 
 ## 2. AppHost and the chat client
 
 - [x] 2.1 Model the Foundry resource with an account-level deployment and local-run configuration in `AppHost.cs`; reference it from the remediation worker but deliberately do **not** wait for it (see 1.4)
-- [ ] 2.2 Add `Aspire.Azure.AI.Inference` to the Agents project and register the chat client from the connection name
-- [ ] 2.3 Remove `FoundryEndpoint` and `ModelDeploymentName` from `AgentsOptions`; add the loop bounds (max attempts, token budget, per-attempt timeout) in their place
+- [x] 2.2 Add `Aspire.Azure.AI.Inference` to the Agents project and register the chat client from the connection name
+- [x] 2.3 Remove `FoundryEndpoint` and `ModelDeploymentName` from `AgentsOptions`; add the loop bounds (max attempts, token budget, per-attempt timeout) in their place
 - [ ] 2.4 Verify the app starts with `aspire start` and every resource including the model reports healthy via `aspire describe` — blocked on 1.3 (Foundry Local installed); the non-model resources are already confirmed healthy with the model failed
 
 ## 3. Domain: attempts and transcript

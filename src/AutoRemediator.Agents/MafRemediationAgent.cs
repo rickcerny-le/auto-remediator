@@ -23,10 +23,10 @@ internal sealed class MafRemediationAgent(
     public Task<RemediationOutcome> RemediateAsync(RemediationRunRequested run, CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
-            "Remediation agent (placeholder) received run {RunId} for {Repository}. Foundry endpoint: {Endpoint}; agent initialized: {Initialized}",
+            "Remediation agent (placeholder) received run {RunId} for {Repository}. Max attempts: {MaxAttempts}; agent initialized: {Initialized}",
             run.RunId,
             run.RepositoryName,
-            _options.FoundryEndpoint ?? "(not configured)",
+            _options.MaxAttempts,
             Agent is not null);
 
         return Task.FromResult(new RemediationOutcome(
