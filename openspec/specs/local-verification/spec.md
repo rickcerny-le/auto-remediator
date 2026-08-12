@@ -35,6 +35,23 @@ Extraction SHALL strip a wrapper directory that the archive nests all content un
 - **WHEN** an archive entry resolves to a path outside the workspace root
 - **THEN** it is not written
 
+### Requirement: Verification is re-runnable against one workspace
+The materialized workspace's lifetime SHALL belong to the run rather than to a single verification call, so a run may verify the same tree repeatedly as edits accumulate. Each verification SHALL compile the tree's current contents, including edits applied since the previous verification.
+
+Cleanup SHALL remain unconditional: the run SHALL delete its workspace on every exit path — success, rejection, exhaustion, unexpected error, and cancellation — as it does when a single verification owns it.
+
+#### Scenario: A second verification sees the first's edits
+- **WHEN** a file in the workspace is edited after one verification and verification runs again
+- **THEN** the second verification compiles the edited content
+
+#### Scenario: Repeated verification does not re-download the tree
+- **WHEN** a run verifies the same workspace more than once
+- **THEN** the repository archive is downloaded and extracted once for that run
+
+#### Scenario: The workspace is still always cleaned up
+- **WHEN** a run that verified more than once reaches any terminal status, or throws, or is cancelled
+- **THEN** its workspace directory is deleted
+
 ### Requirement: Apply computed edits into the tree before verifying
 The system SHALL write the computed manifest edits into the extracted tree before verification runs, so that verification exercises the proposed change rather than the repository's current state. Nothing SHALL be pushed to Azure DevOps before verification has been attempted.
 

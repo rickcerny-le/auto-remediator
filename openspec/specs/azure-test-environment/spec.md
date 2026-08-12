@@ -39,7 +39,7 @@ The environment SHALL provision an Azure Container Registry (Basic), a Storage a
 - **THEN** the registry is Basic, storage is Standard LRS with a table and a blob container, and the Service Bus namespace is Basic with the `remediation-runs` queue
 
 ### Requirement: Azure AI Foundry model access
-The environment SHALL provision Azure AI Foundry access via an AI Services account with a `gpt-4o-mini` model deployment, and SHALL expose the account endpoint and deployment name so they can be supplied to the app as `Agents:FoundryEndpoint` and `Agents:ModelDeploymentName`.
+The environment SHALL provision Azure AI Foundry access via an AI Services account with a `gpt-4o-mini` model deployment, and SHALL expose the account endpoint and deployment name so they can be supplied to the remediation job as a connection reference for the chat client, rather than as an `Agents`-section endpoint and deployment pair.
 
 #### Scenario: A gpt-4o-mini deployment is available
 - **WHEN** the ai-foundry module is applied
@@ -53,11 +53,11 @@ Access to Storage, Service Bus, the container registry, and AI Foundry SHALL be 
 - **THEN** the user-assigned managed identity holds the Storage (table + blob) data roles, Service Bus send/receive roles, AcrPull, and Cognitive Services OpenAI user role, and the Container Apps reference resources by endpoint with that identity rather than via stored connection strings
 
 ### Requirement: Resource endpoints wired into the apps
-Each Container App and Job SHALL receive the endpoints it needs (Storage table/blob endpoints, Service Bus namespace, and — for the remediation job — the Foundry endpoint and model deployment name) as environment variables, so the running app resolves services without hard-coded connection strings.
+Each Container App and Job SHALL receive the endpoints it needs (Storage table/blob endpoints, Service Bus namespace, and — for the remediation job — the Foundry model connection) as environment variables, so the running app resolves services without hard-coded connection strings.
 
 #### Scenario: Apps receive endpoint configuration
 - **WHEN** the apps and jobs are applied
-- **THEN** the `api` and `web` apps receive the Storage and Service Bus endpoints, and the `remediation` job additionally receives `Agents:FoundryEndpoint` and `Agents:ModelDeploymentName`, all as environment variables
+- **THEN** the `api` and `web` apps receive the Storage and Service Bus endpoints, and the `remediation` job additionally receives the Foundry model connection under the connection name the chat client resolves, all as environment variables
 
 ### Requirement: Deployable before app images exist
 Container image references SHALL be variables with defaults that allow `terraform apply` to succeed before the application images are pushed to the registry, and real image references SHALL be supplied per component without code changes.
