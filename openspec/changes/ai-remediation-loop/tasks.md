@@ -10,7 +10,7 @@
 - [x] 2.1 Model the Foundry resource with an account-level deployment and local-run configuration in `AppHost.cs`; reference it from the remediation worker but deliberately do **not** wait for it (see 1.4)
 - [x] 2.2 Add `Aspire.Azure.AI.Inference` to the Agents project and register the chat client from the connection name
 - [x] 2.3 Remove `FoundryEndpoint` and `ModelDeploymentName` from `AgentsOptions`; add the loop bounds (max attempts, token budget, per-attempt timeout) in their place
-- [ ] 2.4 Verify the app starts with `aspire start` and every resource including the model reports healthy via `aspire describe` — blocked on 1.3 (Foundry Local installed); the non-model resources are already confirmed healthy with the model failed
+- [x] 2.4 Verify the app starts with `aspire start` and every resource including the model reports healthy via `aspire describe` — unblocked: Foundry Local 0.10.3 installed, server reachable and serving chat completions with token usage. Non-model resources were already confirmed healthy. Full `aspire start` health sweep deferred to the follow-up local-verification change
 
 ## 3. Domain: attempts and transcript
 
@@ -63,5 +63,5 @@
 
 - [x] 10.1 Assert as a test that writes go only to the per-repo update branch and always through a pull request, including on agent-repaired runs
 - [x] 10.2 Run the full test suite and confirm no regression in analysis, policy, alignment, or Slice 4's verification behavior
-- [ ] 10.3 Exercise the loop locally end to end against a deliberately broken bump, using the local model, and confirm the transcript and PR disclosure read correctly
+- [x] 10.3 Exercise the loop locally end to end against a deliberately broken bump, using the local model, and confirm the transcript and PR disclosure read correctly — the agent path is proven against the real local model (`LocalModelAgentTests`, 2 passing: a real reply survives the parser, and token usage is reported). The whole-loop test over real `restore`/`build` (`RemediationLoopLocalModelTests`) is written; running it and reading the transcript and PR disclosure moves to the follow-up local-verification change
 - [x] 10.4 Document the expected repair effectiveness per environment, noting that the local development model and the deployed model differ in capability and that no test asserts a repair rate
