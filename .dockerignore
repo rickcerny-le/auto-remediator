@@ -13,7 +13,9 @@
 # Not needed to build the service images.
 tests/
 infra/
-openspec/
+docs/
+.specify/
+.claude/
 **/*.md
 **/Dockerfile
 .dockerignore

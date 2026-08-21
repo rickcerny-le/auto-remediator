@@ -2,13 +2,15 @@
 
 North star for the application (product) capabilities, built **walking-skeleton first**:
 a thin path is made to work end-to-end early, then each capability is deepened. Each
-slice below becomes one OpenSpec change (propose → apply → archive); capabilities are
-`ADDED` on first touch and `MODIFIED` as later slices deepen them.
+slice below becomes one Spec Kit feature on its own branch (`/speckit-specify` →
+`/speckit-plan` → `/speckit-tasks` → `/speckit-implement`), squash-merged into `main`.
 
 This roadmap is a map, not a spec. Detailed requirements/scenarios are authored
-**just-in-time** inside each slice's change, so they reflect what was actually built.
+**just-in-time** inside each slice's spec, so they reflect what was actually built.
+When a slice merges, what it built is folded into the capability specs under
+[`docs/specs/`](docs/specs/), which are the standing record of the system as it exists.
 
-> Platform already in place (archived changes): solution scaffold, Aspire orchestration,
+> Platform already in place (see [`docs/specs/`](docs/specs/)): solution scaffold, Aspire orchestration,
 > testing foundation, managed-identity auth, Terraform test environment, per-service
 > containers, and trunk-based CI/CD. This roadmap is the domain on top of that.
 

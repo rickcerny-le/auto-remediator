@@ -1,7 +1,7 @@
 <!--
 Sync Impact Report
 ==================
-Version change: (unversioned template) -> 1.0.0
+Version change: (unversioned template) -> 1.0.0 -> 1.0.1
 
 Rationale: initial ratification. The file previously contained only unresolved
 [PLACEHOLDER] tokens, so this is the first substantive constitution rather than an
@@ -22,6 +22,13 @@ Sections added:
 
 Sections removed: none. The template's five generic principle slots were expanded to
 six named principles; no template section was dropped.
+
+Amendment 1.0.1 (PATCH — clarification, no change in meaning):
+  - Principle III now names Spec Kit as the workflow rather than "an OpenSpec change
+    or Spec Kit feature". OpenSpec has been retired from this repository; no
+    previously compliant work becomes non-compliant, hence PATCH.
+  - Governance now points at `docs/specs/` rather than `openspec/specs/`, following
+    the migration of the 20 capability specs to that path.
 
 Follow-up TODOs:
   - TODO(WARNINGS_AS_ERRORS): Principle I and the Quality Gates section require
@@ -93,8 +100,9 @@ future contributor.
 
 Work is specified before it is built, and `main` is always releasable.
 
-- Every unit of work is a spec (an OpenSpec change or Spec Kit feature) with its own
-  short-lived branch. No spec, no branch.
+- Every unit of work is a Spec Kit feature (`/speckit-specify` -> `/speckit-plan` ->
+  `/speckit-tasks` -> `/speckit-implement`) with its own short-lived branch. No spec,
+  no branch.
 - `main` is the single trunk. Branches MUST be short-lived — measured in days, not
   weeks — and MUST rebase or merge from `main` rather than diverge.
 - Every branch merges into `main` through a pull request, **squashed to one commit**,
@@ -243,7 +251,7 @@ principles, not merely correctness of the diff. Complexity that appears to viola
 principle MUST be justified in the pull request description; an unjustified violation
 is grounds to reject. Violations discovered after merge are tracked as defects and
 fixed, not grandfathered. Runtime development guidance lives in `README.md`,
-`ROADMAP.md`, and the specs under `openspec/specs/`; where those documents disagree
-with this one, this one governs and they are corrected.
+`ROADMAP.md`, and the capability specs under `docs/specs/`; where those documents
+disagree with this one, this one governs and they are corrected.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-21 | **Last Amended**: 2026-08-21
+**Version**: 1.0.1 | **Ratified**: 2026-08-21 | **Last Amended**: 2026-08-21
