@@ -45,4 +45,3 @@ genuinely new capability.
 | [terraform-iac](terraform-iac.md) | Modular Terraform, budget-SKU test environment |
 | [azure-test-environment](azure-test-environment.md) | What the test environment provisions |
 | [container-images](container-images.md) | Per-service Dockerfiles |
-| [ci-cd-pipeline](ci-cd-pipeline.md) | Azure Pipelines validate → package → deploy |
