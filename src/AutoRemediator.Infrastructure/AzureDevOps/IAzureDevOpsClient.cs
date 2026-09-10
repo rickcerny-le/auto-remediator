@@ -24,6 +24,17 @@ public interface IAzureDevOpsClient
     Task<string?> GetBranchHeadAsync(ManagedRepository repository, string branch, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Downloads the repository's full tree at <paramref name="commitId"/> as a zip archive, for local
+    /// verification. Requires no `git` binary and no credential beyond the PAT used for reads. Git LFS
+    /// and submodules are not included by the archive and so are unsupported. Throws when the request
+    /// fails, so the caller can classify verification as skipped rather than silently verifying nothing.
+    /// </summary>
+    Task<Stream> GetRepositoryArchiveAsync(
+        ManagedRepository repository,
+        string commitId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Pushes <paramref name="changes"/> as a single commit to <paramref name="branch"/>, updating
     /// the ref from <paramref name="baseCommitId"/> (the branch head, or the target branch head when
     /// creating the branch).
@@ -44,4 +55,15 @@ public interface IAzureDevOpsClient
         string title,
         string description,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Azure DevOps refused a push because the branch moved since <c>oldObjectId</c> was captured, or
+/// because an edited file no longer exists upstream (a deletion). The push's compare-and-swap is
+/// what makes this detectable; <see cref="TypeKey"/> is the Azure DevOps exception name the
+/// response body carried.
+/// </summary>
+public sealed class PushRejectedException(string typeKey, string message) : Exception(message)
+{
+    public string TypeKey { get; } = typeKey;
 }

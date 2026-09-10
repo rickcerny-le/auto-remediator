@@ -4,7 +4,7 @@ namespace AutoRemediator.Domain;
 
 /// <summary>
 /// Matches package ids against include/exclude globs (case-insensitive), e.g.
-/// <c>Orion180.*</c>. A package matches when it matches any include and no exclude.
+/// <c>Contoso.*</c>. A package matches when it matches any include and no exclude.
 /// </summary>
 public static class PackagePatternMatcher
 {

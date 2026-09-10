@@ -1,5 +1,6 @@
 using AutoRemediator.Contracts;
 using AutoRemediator.Contracts.Messages;
+using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Configuration;
 using AutoRemediator.Infrastructure.Messaging;
 
@@ -13,6 +14,7 @@ namespace AutoRemediator.Worker.Scheduler;
 /// </summary>
 public sealed class SchedulerWorker(
     IManagedRepositoryStore repositories,
+    IRemediationRunStore runStore,
     IMessagePublisher publisher,
     IHostApplicationLifetime lifetime,
     IConfiguration configuration,
@@ -59,6 +61,20 @@ public sealed class SchedulerWorker(
 
         foreach (var repo in repos.Where(r => r.Enabled))
         {
+            // A repository with an open proposal receives no new updates until it is resolved
+            // (FR-024). The skip is recorded rather than silently doing nothing, so a held
+            // repository is visible as held rather than merely quiet (FR-025).
+            var held = await runStore.FindAwaitingReviewAsync(repo.Id, cancellationToken);
+            if (held is not null)
+            {
+                var skip = new RemediationRun(Guid.NewGuid(), repo.Id, repo.Slug, timeProvider.GetUtcNow());
+                skip.SkippedHeld(timeProvider.GetUtcNow());
+                await runStore.SaveAsync(skip, cancellationToken);
+                logger.LogInformation(
+                    "Skipped {Slug}: held for review by run {HeldRunId}.", repo.Slug, held.Id);
+                continue;
+            }
+
             var message = new RemediationRunRequested(
                 RunId: Guid.NewGuid(),
                 RepositoryId: repo.Id,

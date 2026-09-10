@@ -14,10 +14,10 @@
 
 <MudPaper Class="pa-4 mb-6" Elevation="1" MaxWidth="720px">
     <MudText Typo="Typo.h6" GutterBottom="true">Targeting settings</MudText>
-    <MudTextField @bind-Value="_patterns" Label="Package patterns (comma-separated)" Placeholder="Orion180.*" data-testid="patterns" Class="mb-2" />
-    <MudTextField @bind-Value="_excludes" Label="Exclude patterns" Placeholder="Orion180.Legacy.*" Class="mb-2" />
-    <MudTextField @bind-Value="_feeds" Label="Feeds" Placeholder="https://pkgs.dev.azure.com/Orion180/..." Class="mb-2" />
-    <MudTextField @bind-Value="_ignore" Label="Ignore (globs, held from updates)" Placeholder="Orion180.Legacy.*" data-testid="ignore" Class="mb-2" />
+    <MudTextField @bind-Value="_patterns" Label="Package patterns (comma-separated)" Placeholder="Contoso.*" data-testid="patterns" Class="mb-2" />
+    <MudTextField @bind-Value="_excludes" Label="Exclude patterns" Placeholder="Contoso.Legacy.*" Class="mb-2" />
+    <MudTextField @bind-Value="_feeds" Label="Feeds" Placeholder="https://pkgs.dev.azure.com/Contoso/..." Class="mb-2" />
+    <MudTextField @bind-Value="_ignore" Label="Ignore (globs, held from updates)" Placeholder="Contoso.Legacy.*" data-testid="ignore" Class="mb-2" />
     <div class="d-flex align-center gap-4 mb-3">
         <MudSelect @bind-Value="_strategy" Label="Strategy" Style="max-width: 200px;">
             <MudSelectItem Value="@("Patch")">Patch</MudSelectItem>

@@ -11,6 +11,11 @@
     <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Disabled="_loading">Refresh</MudButton>
 </div>
 
+@if (_commandMessage is not null)
+{
+    <MudAlert Severity="Severity.Info" Class="mb-4" data-testid="review-command-message">@_commandMessage</MudAlert>
+}
+
 @if (_error is not null)
 {
     <MudAlert Severity="Severity.Warning" data-testid="run-error">@_error</MudAlert>
@@ -37,6 +42,167 @@ else
         }
     </MudPaper>
 
+    @if (_run.Status == "AwaitingReview")
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1" data-testid="review-panel">
+            <div class="d-flex align-center gap-3 mb-2">
+                <MudText Typo="Typo.subtitle1">Held for review</MudText>
+                <span class="ar-pill warn"><span class="ar-dot"></span>awaiting a decision</span>
+            </div>
+            <MudText Typo="Typo.body2" Class="mb-3">
+                An AI agent repaired a compile break in this change. Nothing has been pushed and no pull
+                request exists yet — review the edits below before deciding.
+            </MudText>
+
+            @if (_run.ReviewNote is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-3" data-testid="review-note">
+                    @_run.ReviewNote
+                    <div class="mt-2">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
+                                   OnClick='() => SendCommandAsync("rebuild")' Disabled="_commandInFlight" data-testid="rebuild-button">
+                            Rebuild
+                        </MudButton>
+                    </div>
+                </MudAlert>
+            }
+
+            @if (_proposal is null)
+            {
+                <MudText Typo="Typo.body2"><em>Loading proposal…</em></MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Verified <span class="ar-mono">@_proposal.VerifiedAtUtc.LocalDateTime.ToString("g")</span>
+                    against base commit <span class="ar-mono">@_proposal.BaseCommitId[..Math.Min(8, _proposal.BaseCommitId.Length)]</span>
+                    over @_proposal.Attempts attempt@(_proposal.Attempts == 1 ? "" : "s").
+                    @if (_proposal.TranscriptUrl is not null)
+                    {
+                        <MudLink Href="@ApiUrl(_proposal.TranscriptUrl)" Target="_blank" Class="ar-mono" data-testid="proposal-transcript-link">transcript</MudLink>
+                    }
+                </MudText>
+
+                @if (_proposal.ProvokingDiagnostics.Count > 0)
+                {
+                    <MudTable Items="_proposal.ProvokingDiagnostics" Dense="true" Hover="true" Class="mb-3" data-testid="proposal-diagnostics">
+                        <HeaderContent>
+                            <MudTh>Code</MudTh><MudTh>Location</MudTh><MudTh>Message</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Code"><span class="ar-mono">@context.Code</span></MudTd>
+                            <MudTd DataLabel="Location"><span class="ar-mono">@Location(context)</span></MudTd>
+                            <MudTd DataLabel="Message">@context.Message</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+
+                @foreach (var file in _proposal.Files)
+                {
+                    <MudExpansionPanels Class="mb-2" data-testid="proposal-file">
+                        <MudExpansionPanel Text="@($"{file.Origin}: {file.Path}")">
+                            <div class="d-flex gap-3" style="flex-wrap:wrap;">
+                                <div style="flex:1;min-width:280px;">
+                                    <MudText Typo="Typo.caption">Before</MudText>
+                                    <pre class="ar-mono" style="white-space:pre-wrap;overflow-x:auto;">@(file.OriginalContent ?? "(file did not exist)")</pre>
+                                </div>
+                                <div style="flex:1;min-width:280px;">
+                                    <MudText Typo="Typo.caption">After</MudText>
+                                    <pre class="ar-mono" style="white-space:pre-wrap;overflow-x:auto;">@file.NewContent</pre>
+                                </div>
+                            </div>
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                }
+            }
+
+            <div class="d-flex gap-2 mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick='() => SendCommandAsync("approve")'
+                           Disabled="_commandInFlight" data-testid="approve-button">
+                    Approve
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick='() => SendCommandAsync("retry")'
+                           Disabled="_commandInFlight" data-testid="retry-button">
+                    Retry
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick='() => SendCommandAsync("discard")'
+                           Disabled="_commandInFlight" data-testid="discard-button">
+                    Discard
+                </MudButton>
+            </div>
+        </MudPaper>
+    }
+
+    @if (_run.Remediation is { } remediation)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1" data-testid="run-remediation">
+            <div class="d-flex align-center gap-3 mb-2">
+                <MudText Typo="Typo.subtitle1">AI remediation</MudText>
+                <span class="ar-pill info"><span class="ar-dot"></span>@remediation.Attempts attempt@(remediation.Attempts == 1 ? "" : "s")</span>
+                <MudSpacer />
+                @if (remediation.TranscriptUrl is not null)
+                {
+                    <MudLink Href="@ApiUrl(remediation.TranscriptUrl)" Target="_blank" Class="ar-mono" data-testid="remediation-transcript-link">transcript</MudLink>
+                }
+            </div>
+            <MudText Typo="Typo.body2">
+                A compile break in this run was handed to an AI agent, which proposed source edits that were
+                re-verified. @(_run.PullRequestUrl is null
+                    ? "The attempts did not produce a building tree, so no pull request was opened."
+                    : "The pull request therefore contains AI-authored source edits.")
+            </MudText>
+        </MudPaper>
+    }
+
+    @if (_run.Verification is { } verification)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="1" data-testid="run-verification">
+            <div class="d-flex align-center gap-3 mb-2">
+                <MudText Typo="Typo.subtitle1">Local verification</MudText>
+                <span class="ar-pill @VerificationPill(verification.Classification)">
+                    <span class="ar-dot"></span>@VerificationLabel(verification.Classification)
+                </span>
+                <MudSpacer />
+                @if (verification.LogUrl is not null)
+                {
+                    <MudLink Href="@ApiUrl(verification.LogUrl)" Target="_blank" Class="ar-mono" data-testid="verification-log-link">full log</MudLink>
+                }
+            </div>
+
+            @if (verification.Classification == "Skipped")
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" data-testid="verification-skip-reason">
+                    Verification was skipped, so this change was not compiled: @verification.SkipReason
+                </MudAlert>
+            }
+            else if (verification.Classification == "Verified")
+            {
+                <MudText Typo="Typo.body2">
+                    <code>dotnet restore</code> and <code>dotnet build</code> both succeeded. Tests are run by the repository's own CI.
+                </MudText>
+            }
+
+            @if (verification.Diagnostics.Count > 0)
+            {
+                <MudTable Items="verification.Diagnostics" Dense="true" Hover="true" Class="mt-3" data-testid="verification-diagnostics">
+                    <HeaderContent>
+                        <MudTh>Code</MudTh><MudTh>Location</MudTh><MudTh>Message</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Code"><span class="ar-mono">@context.Code</span></MudTd>
+                        <MudTd DataLabel="Location"><span class="ar-mono">@Location(context)</span></MudTd>
+                        <MudTd DataLabel="Message">@context.Message</MudTd>
+                    </RowTemplate>
+                </MudTable>
+
+                @* The run record keeps a bounded set of diagnostics; the log always has them all. *@
+                <MudText Typo="Typo.caption" Class="mt-2" data-testid="verification-diagnostics-note">
+                    A capped set of diagnostics is kept on the run — the full log has every one.
+                </MudText>
+            }
+        </MudPaper>
+    }
+
     <MudTable Items="_run.Updates" Dense="true" Hover="true" data-testid="run-updates">
         <HeaderContent>
             <MudTh>Package</MudTh><MudTh>From</MudTh><MudTh>To</MudTh><MudTh>Kind</MudTh>
@@ -61,8 +227,11 @@ else
     [Parameter] public Guid Id { get; set; }
 
     private RunDetailDto? _run;
+    private ChangeProposalDto? _proposal;
     private bool _loading;
+    private bool _commandInFlight;
     private string? _error;
+    private string? _commandMessage;
 
     protected override Task OnParametersSetAsync() => LoadAsync();
 
@@ -70,6 +239,7 @@ else
     {
         _loading = true;
         _error = null;
+        _proposal = null;
         try
         {
             var response = await HttpFactory.CreateClient("api").GetAsync($"api/runs/{Id}");
@@ -81,6 +251,10 @@ else
             else
             {
                 _run = await response.Content.ReadFromJsonAsync<RunDetailDto>();
+                if (_run?.ProposalUrl is not null)
+                {
+                    _proposal = await HttpFactory.CreateClient("api").GetFromJsonAsync<ChangeProposalDto>(_run.ProposalUrl);
+                }
             }
         }
         catch (Exception ex)
@@ -93,13 +267,83 @@ else
         }
     }
 
-    private static string Human(string status) => status == "NoUpdates" ? "No updates" : status;
+    /// <summary>
+    /// Sends a review command and re-loads the run. Presents the result as a push *requested*, not
+    /// completed — the worker executes it, and the run record is the authority for what happened
+    /// (FR-014, SC-007).
+    /// </summary>
+    private async Task SendCommandAsync(string command)
+    {
+        _commandInFlight = true;
+        _commandMessage = null;
+        try
+        {
+            var response = await HttpFactory.CreateClient("api").PostAsync($"api/runs/{Id}/review/{command}", content: null);
+            _commandMessage = response.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Accepted => $"{Capitalize(command)} requested. The worker will process it shortly — refresh to see the result.",
+                System.Net.HttpStatusCode.Conflict => "This run has already moved on; the command was not applied.",
+                _ => $"Could not send the command ({(int)response.StatusCode}).",
+            };
+        }
+        catch (Exception ex)
+        {
+            _commandMessage = $"Failed to send the command: {ex.Message}";
+        }
+        finally
+        {
+            _commandInFlight = false;
+        }
 
+        await LoadAsync();
+    }
+
+    private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
+
+    private static string Human(string status) => status switch
+    {
+        "NoUpdates" => "No updates",
+        "VerificationFailed" => "Verification failed",
+        "AwaitingReview" => "Awaiting review",
+        "SkippedHeld" => "Held (skipped)",
+        _ => status,
+    };
+
+    // VerificationFailed reads as a warning, not an error: the tool worked, the bump did not.
+    // AwaitingReview and SkippedHeld read as waiting on a person, not as finished or failed.
     private static string PillClass(string status) => status switch
     {
         "Completed" => "ok",
+        "VerificationFailed" => "warn",
         "Failed" => "bad",
         "NoUpdates" => "mute",
+        "AwaitingReview" => "warn",
+        "SkippedHeld" => "mute",
+        "Discarded" => "mute",
         _ => "run",
     };
+
+    private static string VerificationLabel(string classification) => classification switch
+    {
+        "Verified" => "verified",
+        "DependencyFailure" => "rejected",
+        "Skipped" => "not verified",
+        _ => classification,
+    };
+
+    private static string VerificationPill(string classification) => classification switch
+    {
+        "Verified" => "ok",
+        "DependencyFailure" => "warn",
+        "Skipped" => "mute",
+        _ => "info",
+    };
+
+    private static string Location(RunDiagnosticDto d) => d.Path is null
+        ? "—"
+        : d.Line is null ? d.Path : $"{d.Path}:{d.Line}{(d.Column is null ? "" : $":{d.Column}")}";
+
+    /// <summary>The API-relative log URL resolved against the configured API client's base address.</summary>
+    private string ApiUrl(string relative) =>
+        new Uri(HttpFactory.CreateClient("api").BaseAddress!, relative.TrimStart('/')).ToString();
 }

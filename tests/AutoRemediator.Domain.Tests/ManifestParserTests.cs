@@ -10,7 +10,7 @@ public class ManifestParserTests
         const string props = """
             <Project>
               <ItemGroup>
-                <PackageVersion Include="Orion180.Core" Version="1.2.3" />
+                <PackageVersion Include="Contoso.Core" Version="1.2.3" />
                 <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
               </ItemGroup>
             </Project>
@@ -18,7 +18,7 @@ public class ManifestParserTests
 
         var packages = ManifestParser.Parse(props);
 
-        Assert.Contains(packages, p => p.Id == "Orion180.Core" && p.Version == "1.2.3");
+        Assert.Contains(packages, p => p.Id == "Contoso.Core" && p.Version == "1.2.3");
         Assert.Contains(packages, p => p.Id == "Newtonsoft.Json" && p.Version == "13.0.3");
     }
 
@@ -28,7 +28,7 @@ public class ManifestParserTests
         const string csproj = """
             <Project Sdk="Microsoft.NET.Sdk">
               <ItemGroup>
-                <PackageReference Include="Orion180.Data" Version="2.0.0" />
+                <PackageReference Include="Contoso.Data" Version="2.0.0" />
                 <PackageReference Include="Serilog">
                   <Version>3.1.1</Version>
                 </PackageReference>
@@ -38,7 +38,7 @@ public class ManifestParserTests
 
         var packages = ManifestParser.Parse(csproj);
 
-        Assert.Contains(packages, p => p.Id == "Orion180.Data" && p.Version == "2.0.0");
+        Assert.Contains(packages, p => p.Id == "Contoso.Data" && p.Version == "2.0.0");
         Assert.Contains(packages, p => p.Id == "Serilog" && p.Version == "3.1.1");
     }
 
@@ -48,7 +48,7 @@ public class ManifestParserTests
         const string csproj = """
             <Project>
               <ItemGroup>
-                <PackageReference Include="Orion180.Core" Version="$(OrionVersion)" />
+                <PackageReference Include="Contoso.Core" Version="$(OrionVersion)" />
               </ItemGroup>
             </Project>
             """;
@@ -56,7 +56,7 @@ public class ManifestParserTests
         var packages = ManifestParser.Parse(csproj);
 
         var pkg = Assert.Single(packages);
-        Assert.Equal("Orion180.Core", pkg.Id);
+        Assert.Equal("Contoso.Core", pkg.Id);
         Assert.Null(pkg.Version);
     }
 

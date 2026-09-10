@@ -13,6 +13,9 @@ public interface IRemediationRunStore
     Task<IReadOnlyList<RemediationRun>> ListByRepositoryAsync(Guid repositoryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RemediationRun>> ListAllAsync(CancellationToken cancellationToken = default);
     Task<RemediationRun?> GetAsync(Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>The run holding this repository's open proposal, or null when the repository is not held.</summary>
+    Task<RemediationRun?> FindAwaitingReviewAsync(Guid repositoryId, CancellationToken cancellationToken = default);
 }
 
 internal sealed class RemediationRunEntity : ITableEntity
@@ -30,6 +33,19 @@ internal sealed class RemediationRunEntity : ITableEntity
     public string? PullRequestUrl { get; set; }
     public string? Error { get; set; }
 
+    // Verification is stored flat rather than as one blob so the classification stays queryable.
+    public string? VerificationStatus { get; set; }
+    public string? VerificationSkipReason { get; set; }
+    public string? VerificationDiagnosticsJson { get; set; }
+    public string? VerificationLogReference { get; set; }
+
+    public int? RemediationAttempts { get; set; }
+    public string? RemediationTranscriptReference { get; set; }
+
+    public string? ProposalReference { get; set; }
+    public string? ReviewNote { get; set; }
+    public int? ReviewCommandCount { get; set; }
+
     public static RemediationRunEntity FromDomain(RemediationRun run) => new()
     {
         PartitionKey = run.RepositoryId.ToString(),
@@ -41,6 +57,17 @@ internal sealed class RemediationRunEntity : ITableEntity
         UpdatesJson = JsonSerializer.Serialize(run.Updates),
         PullRequestUrl = run.PullRequestUrl,
         Error = run.Error,
+        VerificationStatus = run.Verification?.Classification.ToString(),
+        VerificationSkipReason = run.Verification?.SkipReason,
+        VerificationDiagnosticsJson = run.Verification is { Diagnostics.Count: > 0 } v
+            ? JsonSerializer.Serialize(v.Diagnostics)
+            : null,
+        VerificationLogReference = run.Verification?.LogReference,
+        RemediationAttempts = run.RemediationAttempts,
+        RemediationTranscriptReference = run.RemediationTranscriptReference,
+        ProposalReference = run.ProposalReference,
+        ReviewNote = run.ReviewNote,
+        ReviewCommandCount = run.ReviewCommandCount,
     };
 
     public RemediationRun ToDomain()
@@ -49,7 +76,23 @@ internal sealed class RemediationRunEntity : ITableEntity
         var status = Enum.TryParse<RunStatus>(Status, out var s) ? s : RunStatus.Reading;
         return RemediationRun.Restore(
             Guid.Parse(RowKey), Guid.Parse(PartitionKey), RepositorySlug, status,
-            StartedAtUtc, FinishedAtUtc, updates, PullRequestUrl, Error);
+            StartedAtUtc, FinishedAtUtc, updates, PullRequestUrl, Error, ToVerification(),
+            RemediationAttempts, RemediationTranscriptReference,
+            ProposalReference, ReviewNote, ReviewCommandCount ?? 0);
+    }
+
+    private VerificationOutcome? ToVerification()
+    {
+        if (!Enum.TryParse<VerificationClassification>(VerificationStatus, out var classification))
+        {
+            return null;
+        }
+
+        var diagnostics = VerificationDiagnosticsJson is null
+            ? []
+            : JsonSerializer.Deserialize<List<VerificationDiagnostic>>(VerificationDiagnosticsJson) ?? [];
+
+        return new VerificationOutcome(classification, VerificationSkipReason, diagnostics, VerificationLogReference);
     }
 }
 
@@ -96,6 +139,21 @@ internal sealed class TableRemediationRunStore(ITableStore tableStore) : IRemedi
 
         await foreach (var entity in table.QueryAsync<RemediationRunEntity>(
             e => e.RowKey == runId.ToString(), cancellationToken: cancellationToken))
+        {
+            return entity.ToDomain();
+        }
+
+        return null;
+    }
+
+    public async Task<RemediationRun?> FindAwaitingReviewAsync(Guid repositoryId, CancellationToken cancellationToken = default)
+    {
+        var table = await tableStore.GetTableAsync(TableName, cancellationToken);
+        var partitionKey = repositoryId.ToString();
+        var status = nameof(RunStatus.AwaitingReview);
+
+        await foreach (var entity in table.QueryAsync<RemediationRunEntity>(
+            e => e.PartitionKey == partitionKey && e.Status == status, cancellationToken: cancellationToken))
         {
             return entity.ToDomain();
         }

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AutoRemediator.Infrastructure\AutoRemediator.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\AutoRemediator.Agents\AutoRemediator.Agents.csproj" />
   </ItemGroup>
 
 </Project>

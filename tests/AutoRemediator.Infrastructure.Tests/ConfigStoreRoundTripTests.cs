@@ -20,7 +20,7 @@ public class ConfigStoreRoundTripTests
         await using var _ = provider;
 
         var repoStore = provider.GetRequiredService<IManagedRepositoryStore>();
-        var repo = new ManagedRepository(Guid.NewGuid(), "orion180", "platform", "web-api", true, "main");
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api", true, "main");
 
         try
         {
@@ -34,14 +34,14 @@ public class ConfigStoreRoundTripTests
 
         var fetched = await repoStore.GetAsync(repo.Id, ct);
         Assert.NotNull(fetched);
-        Assert.Equal("orion180/platform/web-api", fetched!.Slug);
+        Assert.Equal("contoso/platform/web-api", fetched!.Slug);
         Assert.Equal("main", fetched.TargetBranch);
 
         var settingsStore = provider.GetRequiredService<ITargetingSettingsStore>();
-        await settingsStore.SetAsync(new TargetingSettings(["Orion180.*"], excludes: ["Orion180.Legacy.*"], feeds: ["https://feed"]), ct);
+        await settingsStore.SetAsync(new TargetingSettings(["Contoso.*"], excludes: ["Contoso.Legacy.*"], feeds: ["https://feed"]), ct);
         var settings = await settingsStore.GetAsync(ct);
-        Assert.Contains("Orion180.*", settings.Patterns);
-        Assert.Contains("Orion180.Legacy.*", settings.Excludes);
+        Assert.Contains("Contoso.*", settings.Patterns);
+        Assert.Contains("Contoso.Legacy.*", settings.Excludes);
 
         await repoStore.DeleteAsync(repo.Id, ct);
     }

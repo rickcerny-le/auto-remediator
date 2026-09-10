@@ -18,17 +18,17 @@ public class DependencyAlignerTests
         // Core is being bumped to 1.5.0; Core 1.5.0 needs Common >= 1.5.0; repo pins Common 1.4.0.
         var deps = new Dictionary<string, IReadOnlyList<FamilyDependency>>
         {
-            ["Orion180.Core/1.5.0"] = [Dep("Orion180.Common", "[1.5.0, )")],
+            ["Contoso.Core/1.5.0"] = [Dep("Contoso.Common", "[1.5.0, )")],
         };
-        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Orion180.Common"] = ["1.4.0", "1.5.0", "1.6.0"] };
+        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Contoso.Common"] = ["1.4.0", "1.5.0", "1.6.0"] };
 
         var result = await Align(
-            declaredCurrent: new() { ["Orion180.Core"] = "1.4.0", ["Orion180.Common"] = "1.4.0" },
-            chosen: new() { ["Orion180.Core"] = "1.5.0", ["Orion180.Common"] = "1.4.0" },
+            declaredCurrent: new() { ["Contoso.Core"] = "1.4.0", ["Contoso.Common"] = "1.4.0" },
+            chosen: new() { ["Contoso.Core"] = "1.5.0", ["Contoso.Common"] = "1.4.0" },
             deps, versions, UpdateStrategy.Minor);
 
-        Assert.Equal("1.5.0", result.Chosen["Orion180.Common"]); // minimal satisfying, not 1.6.0
-        Assert.DoesNotContain("Orion180.Common", result.BeyondPolicy);
+        Assert.Equal("1.5.0", result.Chosen["Contoso.Common"]); // minimal satisfying, not 1.6.0
+        Assert.DoesNotContain("Contoso.Common", result.BeyondPolicy);
         Assert.Empty(result.Unresolved);
     }
 
@@ -37,15 +37,15 @@ public class DependencyAlignerTests
     {
         var deps = new Dictionary<string, IReadOnlyList<FamilyDependency>>
         {
-            ["Orion180.Core/1.5.0"] = [Dep("Orion180.Common", "[1.0.0, )")],
+            ["Contoso.Core/1.5.0"] = [Dep("Contoso.Common", "[1.0.0, )")],
         };
 
         var result = await Align(
-            new() { ["Orion180.Core"] = "1.4.0", ["Orion180.Common"] = "1.4.0" },
-            new() { ["Orion180.Core"] = "1.5.0", ["Orion180.Common"] = "1.4.0" },
+            new() { ["Contoso.Core"] = "1.4.0", ["Contoso.Common"] = "1.4.0" },
+            new() { ["Contoso.Core"] = "1.5.0", ["Contoso.Common"] = "1.4.0" },
             deps, new Dictionary<string, IReadOnlyList<string>>(), UpdateStrategy.Minor);
 
-        Assert.Equal("1.4.0", result.Chosen["Orion180.Common"]);
+        Assert.Equal("1.4.0", result.Chosen["Contoso.Common"]);
     }
 
     [Fact]
@@ -53,15 +53,15 @@ public class DependencyAlignerTests
     {
         var deps = new Dictionary<string, IReadOnlyList<FamilyDependency>>
         {
-            ["Orion180.Core/1.5.0"] = [Dep("Orion180.Common", "[1.5.0, )")],
+            ["Contoso.Core/1.5.0"] = [Dep("Contoso.Common", "[1.5.0, )")],
         };
         // Common is not declared (not in chosen) → transitive, left to NuGet.
         var result = await Align(
-            new() { ["Orion180.Core"] = "1.4.0" },
-            new() { ["Orion180.Core"] = "1.5.0" },
-            deps, new Dictionary<string, IReadOnlyList<string>> { ["Orion180.Common"] = ["1.5.0"] }, UpdateStrategy.Minor);
+            new() { ["Contoso.Core"] = "1.4.0" },
+            new() { ["Contoso.Core"] = "1.5.0" },
+            deps, new Dictionary<string, IReadOnlyList<string>> { ["Contoso.Common"] = ["1.5.0"] }, UpdateStrategy.Minor);
 
-        Assert.False(result.Chosen.ContainsKey("Orion180.Common"));
+        Assert.False(result.Chosen.ContainsKey("Contoso.Common"));
     }
 
     [Fact]
@@ -69,22 +69,22 @@ public class DependencyAlignerTests
     {
         var deps = new Dictionary<string, IReadOnlyList<FamilyDependency>>
         {
-            ["Orion180.A/2.0.0"] = [Dep("Orion180.B", "[2.0.0, )")],
-            ["Orion180.B/2.0.0"] = [Dep("Orion180.C", "[2.0.0, )")],
+            ["Contoso.A/2.0.0"] = [Dep("Contoso.B", "[2.0.0, )")],
+            ["Contoso.B/2.0.0"] = [Dep("Contoso.C", "[2.0.0, )")],
         };
         var versions = new Dictionary<string, IReadOnlyList<string>>
         {
-            ["Orion180.B"] = ["1.0.0", "2.0.0"],
-            ["Orion180.C"] = ["1.0.0", "2.0.0"],
+            ["Contoso.B"] = ["1.0.0", "2.0.0"],
+            ["Contoso.C"] = ["1.0.0", "2.0.0"],
         };
 
         var result = await Align(
-            new() { ["Orion180.A"] = "1.0.0", ["Orion180.B"] = "1.0.0", ["Orion180.C"] = "1.0.0" },
-            new() { ["Orion180.A"] = "2.0.0", ["Orion180.B"] = "1.0.0", ["Orion180.C"] = "1.0.0" },
+            new() { ["Contoso.A"] = "1.0.0", ["Contoso.B"] = "1.0.0", ["Contoso.C"] = "1.0.0" },
+            new() { ["Contoso.A"] = "2.0.0", ["Contoso.B"] = "1.0.0", ["Contoso.C"] = "1.0.0" },
             deps, versions, UpdateStrategy.Major);
 
-        Assert.Equal("2.0.0", result.Chosen["Orion180.B"]);
-        Assert.Equal("2.0.0", result.Chosen["Orion180.C"]);
+        Assert.Equal("2.0.0", result.Chosen["Contoso.B"]);
+        Assert.Equal("2.0.0", result.Chosen["Contoso.C"]);
     }
 
     [Fact]
@@ -92,17 +92,17 @@ public class DependencyAlignerTests
     {
         var deps = new Dictionary<string, IReadOnlyList<FamilyDependency>>
         {
-            ["Orion180.Core/1.5.0"] = [Dep("Orion180.Common", "[2.0.0, )")],
+            ["Contoso.Core/1.5.0"] = [Dep("Contoso.Common", "[2.0.0, )")],
         };
-        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Orion180.Common"] = ["1.4.0", "2.0.0"] };
+        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Contoso.Common"] = ["1.4.0", "2.0.0"] };
 
         var result = await Align(
-            new() { ["Orion180.Core"] = "1.4.0", ["Orion180.Common"] = "1.4.0" },
-            new() { ["Orion180.Core"] = "1.5.0", ["Orion180.Common"] = "1.4.0" },
+            new() { ["Contoso.Core"] = "1.4.0", ["Contoso.Common"] = "1.4.0" },
+            new() { ["Contoso.Core"] = "1.5.0", ["Contoso.Common"] = "1.4.0" },
             deps, versions, UpdateStrategy.Minor);
 
-        Assert.Equal("2.0.0", result.Chosen["Orion180.Common"]);
-        Assert.Contains("Orion180.Common", result.BeyondPolicy); // major jump under Minor
+        Assert.Equal("2.0.0", result.Chosen["Contoso.Common"]);
+        Assert.Contains("Contoso.Common", result.BeyondPolicy); // major jump under Minor
     }
 
     [Fact]
@@ -110,17 +110,17 @@ public class DependencyAlignerTests
     {
         var deps = new Dictionary<string, IReadOnlyList<FamilyDependency>>
         {
-            ["Orion180.Core/1.5.0"] = [Dep("Orion180.Common", "[3.0.0, )")],
+            ["Contoso.Core/1.5.0"] = [Dep("Contoso.Common", "[3.0.0, )")],
         };
-        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Orion180.Common"] = ["1.4.0", "2.0.0"] };
+        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Contoso.Common"] = ["1.4.0", "2.0.0"] };
 
         var result = await Align(
-            new() { ["Orion180.Core"] = "1.4.0", ["Orion180.Common"] = "1.4.0" },
-            new() { ["Orion180.Core"] = "1.5.0", ["Orion180.Common"] = "1.4.0" },
+            new() { ["Contoso.Core"] = "1.4.0", ["Contoso.Common"] = "1.4.0" },
+            new() { ["Contoso.Core"] = "1.5.0", ["Contoso.Common"] = "1.4.0" },
             deps, versions, UpdateStrategy.Major);
 
-        Assert.Equal("1.4.0", result.Chosen["Orion180.Common"]);
-        Assert.Contains("Orion180.Common", result.Unresolved);
+        Assert.Equal("1.4.0", result.Chosen["Contoso.Common"]);
+        Assert.Contains("Contoso.Common", result.Unresolved);
     }
 
     private static async Task<AlignmentResult> Align(
@@ -130,7 +130,7 @@ public class DependencyAlignerTests
         IReadOnlyDictionary<string, IReadOnlyList<string>> versions,
         UpdateStrategy strategy)
     {
-        var settings = new TargetingSettings(["Orion180.*"], feeds: ["https://feed"], policy: new UpdatePolicy(strategy, []));
+        var settings = new TargetingSettings(["Contoso.*"], feeds: ["https://feed"], policy: new UpdatePolicy(strategy, []));
 
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";

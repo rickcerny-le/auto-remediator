@@ -11,7 +11,17 @@ resource "azurerm_servicebus_queue" "remediation_runs" {
   namespace_id = azurerm_servicebus_namespace.this.id
 
   # Basic-tier compatible settings.
-  max_delivery_count   = 10
-  lock_duration        = "PT1M"
-  default_message_ttl  = "P14D"
+  max_delivery_count  = 10
+  lock_duration       = "PT1M"
+  default_message_ttl = "P14D"
+}
+
+resource "azurerm_servicebus_queue" "review_commands" {
+  name         = var.review_commands_queue_name
+  namespace_id = azurerm_servicebus_namespace.this.id
+
+  # Basic-tier compatible settings.
+  max_delivery_count  = 10
+  lock_duration       = "PT1M"
+  default_message_ttl = "P14D"
 }

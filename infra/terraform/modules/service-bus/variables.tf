@@ -19,6 +19,12 @@ variable "queue_name" {
   default     = "remediation-runs"
 }
 
+variable "review_commands_queue_name" {
+  type        = string
+  description = "Queue carrying ReviewCommandRequested messages."
+  default     = "review-commands"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Tags to apply."

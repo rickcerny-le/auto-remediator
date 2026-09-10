@@ -10,8 +10,8 @@ public class UpdatePlannerTests
 {
     private const string Manifest = """
         <Project><ItemGroup>
-          <PackageVersion Include="Orion180.Core" Version="1.0.0" />
-          <PackageVersion Include="Orion180.Data" Version="2.0.0" />
+          <PackageVersion Include="Contoso.Core" Version="1.0.0" />
+          <PackageVersion Include="Contoso.Data" Version="2.0.0" />
         </ItemGroup></Project>
         """;
 
@@ -22,21 +22,21 @@ public class UpdatePlannerTests
         [
             new AnalyzedManifest("/Directory.Packages.props", Manifest,
             [
-                new AnalyzedPackage("Orion180.Core", "1.0.0", "2.5.0", DependencyStatus.Outdated),
-                new AnalyzedPackage("Orion180.Data", "2.0.0", "2.0.0", DependencyStatus.UpToDate),
+                new AnalyzedPackage("Contoso.Core", "1.0.0", "2.5.0", DependencyStatus.Outdated),
+                new AnalyzedPackage("Contoso.Data", "2.0.0", "2.0.0", DependencyStatus.UpToDate),
             ]),
         ]);
 
         var plan = await PlanAsync(analysis);
 
         var update = Assert.Single(plan.Updates);
-        Assert.Equal("Orion180.Core", update.PackageId);
+        Assert.Equal("Contoso.Core", update.PackageId);
         Assert.Equal("1.0.0", update.FromVersion);
         Assert.Equal("2.5.0", update.ToVersion);
 
         var changed = Assert.Single(plan.ChangedManifests);
-        Assert.Contains("""Include="Orion180.Core" Version="2.5.0" """, changed.NewContent);
-        Assert.Contains("""Include="Orion180.Data" Version="2.0.0" """, changed.NewContent); // untouched
+        Assert.Contains("""Include="Contoso.Core" Version="2.5.0" """, changed.NewContent);
+        Assert.Contains("""Include="Contoso.Data" Version="2.0.0" """, changed.NewContent); // untouched
         Assert.True(plan.HasChanges);
     }
 
@@ -47,17 +47,17 @@ public class UpdatePlannerTests
         [
             new AnalyzedManifest("/Directory.Packages.props", Manifest,
             [
-                new AnalyzedPackage("Orion180.Core", "1.0.0", "2.0.0", DependencyStatus.Outdated),
-                new AnalyzedPackage("Orion180.Data", "2.0.0", null, DependencyStatus.Ignored),
+                new AnalyzedPackage("Contoso.Core", "1.0.0", "2.0.0", DependencyStatus.Outdated),
+                new AnalyzedPackage("Contoso.Data", "2.0.0", null, DependencyStatus.Ignored),
             ]),
         ]);
 
         var plan = await PlanAsync(analysis);
 
         var update = Assert.Single(plan.Updates);
-        Assert.Equal("Orion180.Core", update.PackageId);
+        Assert.Equal("Contoso.Core", update.PackageId);
         // The ignored package's version is untouched in the edited manifest.
-        Assert.Contains("""Include="Orion180.Data" Version="2.0.0" """, Assert.Single(plan.ChangedManifests).NewContent);
+        Assert.Contains("""Include="Contoso.Data" Version="2.0.0" """, Assert.Single(plan.ChangedManifests).NewContent);
     }
 
     [Fact]
@@ -67,8 +67,8 @@ public class UpdatePlannerTests
         [
             new AnalyzedManifest("/Directory.Packages.props", Manifest,
             [
-                new AnalyzedPackage("Orion180.Core", "1.0.0", "1.0.0", DependencyStatus.UpToDate),
-                new AnalyzedPackage("Orion180.Data", null, null, DependencyStatus.Unknown),
+                new AnalyzedPackage("Contoso.Core", "1.0.0", "1.0.0", DependencyStatus.UpToDate),
+                new AnalyzedPackage("Contoso.Data", null, null, DependencyStatus.Unknown),
             ]),
         ]);
 
@@ -90,7 +90,7 @@ public class UpdatePlannerTests
         builder.Services.AddSingleton<IRepositoryAnalyzer>(new FakeAnalyzer(analysis));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var repo = new ManagedRepository(Guid.NewGuid(), "orion180", "platform", "web-api");
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api");
         return await provider.GetRequiredService<IUpdatePlanner>().PlanAsync(repo, TargetingSettings.Empty, TestContext.Current.CancellationToken);
     }
 

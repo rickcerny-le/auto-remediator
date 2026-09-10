@@ -16,7 +16,7 @@ public class DependencyMapEndpointTests(ApiFactory factory) : IClassFixture<ApiF
     {
         var map = new DependencyMap(
         [
-            new DependencyMapEntry("orion180/platform/web-api", "Orion180.Core", "1.0.0", "2.0.0", DependencyStatus.Outdated),
+            new DependencyMapEntry("contoso/platform/web-api", "Contoso.Core", "1.0.0", "2.0.0", DependencyStatus.Outdated),
         ]);
 
         var client = factory.WithWebHostBuilder(b =>
@@ -30,7 +30,7 @@ public class DependencyMapEndpointTests(ApiFactory factory) : IClassFixture<ApiF
 
         Assert.NotNull(dto);
         var entry = Assert.Single(dto.Entries);
-        Assert.Equal("Orion180.Core", entry.PackageId);
+        Assert.Equal("Contoso.Core", entry.PackageId);
         Assert.Equal("1.0.0", entry.CurrentVersion);
         Assert.Equal("2.0.0", entry.LatestVersion);
         Assert.Equal("Outdated", entry.Status);

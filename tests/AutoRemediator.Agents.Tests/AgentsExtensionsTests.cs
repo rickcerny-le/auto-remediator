@@ -1,4 +1,6 @@
 using AutoRemediator.Agents;
+using AutoRemediator.Domain;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -11,18 +13,67 @@ public class AgentsExtensionsTests
     public void AddAgents_registers_remediation_agent_without_network_call()
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Configuration["Agents:FoundryEndpoint"] = "https://example-foundry.services.ai.azure.com";
-        builder.Configuration["Agents:ModelDeploymentName"] = "gpt-4o";
 
         builder.AddAgents();
 
         using var provider = builder.Services.BuildServiceProvider();
 
-        var agent = provider.GetService<IRemediationAgent>();
-        Assert.NotNull(agent);
+        Assert.NotNull(provider.GetService<IRemediationAgent>());
+    }
 
+    [Fact]
+    public void The_attempt_timeout_binds_from_configuration()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["Agents:AttemptTimeout"] = "00:01:30";
+
+        builder.AddAgents();
+
+        using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<AgentsOptions>>().Value;
-        Assert.Equal("https://example-foundry.services.ai.azure.com", options.FoundryEndpoint);
-        Assert.Equal("gpt-4o", options.ModelDeploymentName);
+
+        Assert.Equal(TimeSpan.FromMinutes(1.5), options.AttemptTimeout);
+    }
+
+    [Fact]
+    public void The_attempt_timeout_has_a_default()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddAgents();
+
+        using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<AgentsOptions>>().Value;
+
+        Assert.True(options.AttemptTimeout > TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void A_chat_client_is_registered_when_a_model_connection_is_configured()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["ConnectionStrings:chat"] =
+            "Endpoint=https://example-foundry.services.ai.azure.com/;Key=abc123;DeploymentName=phi-4";
+
+        builder.AddAgents();
+
+        using var provider = builder.Services.BuildServiceProvider();
+
+        // Resolving the client must not make a network call.
+        Assert.NotNull(provider.GetService<IChatClient>());
+    }
+
+    [Fact]
+    public void Registration_succeeds_without_a_model_connection()
+    {
+        // The model is a soft dependency: the worker must still start and run mechanical
+        // bumps when no model is configured, with only AI repair unavailable.
+        var builder = Host.CreateApplicationBuilder();
+
+        builder.AddAgents();
+
+        using var provider = builder.Services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetService<IRemediationAgent>());
+        Assert.Null(provider.GetService<IChatClient>());
     }
 }

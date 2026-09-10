@@ -55,6 +55,26 @@ internal sealed class AzureDevOpsClient(HttpClient httpClient) : IAzureDevOpsCli
         return payload?.Value?.FirstOrDefault(r => string.Equals(r.Name, fullName, StringComparison.OrdinalIgnoreCase))?.ObjectId;
     }
 
+    public async Task<Stream> GetRepositoryArchiveAsync(
+        ManagedRepository repository,
+        string commitId,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"{RepoBase(repository)}/items?scopePath=/&recursionLevel=Full" +
+                  $"&versionDescriptor.version={Uri.EscapeDataString(commitId)}&versionDescriptor.versionType=commit" +
+                  $"&$format=zip&download=true&{ApiVersion}";
+
+        // Buffered rather than streamed: the response must be disposed with the request, and the
+        // caller extracts from a seekable stream.
+        using var response = await httpClient.GetAsync(url, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        var archive = new MemoryStream();
+        await response.Content.CopyToAsync(archive, cancellationToken);
+        archive.Position = 0;
+        return archive;
+    }
+
     public async Task PushFilesAsync(
         ManagedRepository repository,
         string branch,
@@ -82,7 +102,38 @@ internal sealed class AzureDevOpsClient(HttpClient httpClient) : IAzureDevOpsCli
         };
 
         using var response = await httpClient.PostAsJsonAsync($"{RepoBase(repository)}/pushes?{ApiVersion}", body, JsonOptions, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var typeKey = await TryGetTypeKeyAsync(response, cancellationToken);
+            if (typeKey is "GitRefUpdateStaleException" or "GitRefUpdateOldObjectIdMismatchException" or "GitItemNotFoundException")
+            {
+                throw new PushRejectedException(typeKey, $"Azure DevOps refused the push: {typeKey}.");
+            }
+        }
+
         response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// Reads the response body's <c>typeKey</c>, the field Azure DevOps' error contract uses to
+    /// identify a refused ref update — the compare-and-swap already issued by <see cref="PushFilesAsync"/>
+    /// making the branch-moved and file-deleted-upstream cases distinguishable from any other
+    /// failure. Returns null rather than throwing when the body is not the expected shape, so an
+    /// unrelated failure (a bad PAT, a network error) is unaffected.
+    /// </summary>
+    private static async Task<string?> TryGetTypeKeyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.TryGetProperty("typeKey", out var typeKey) ? typeKey.GetString() : null;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     public async Task<string> EnsurePullRequestAsync(

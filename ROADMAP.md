@@ -2,15 +2,14 @@
 
 North star for the application (product) capabilities, built **walking-skeleton first**:
 a thin path is made to work end-to-end early, then each capability is deepened. Each
-slice below becomes one OpenSpec change (propose → apply → archive); capabilities are
-`ADDED` on first touch and `MODIFIED` as later slices deepen them.
+slice below becomes its own feature branch, squash-merged into `main`.
 
-This roadmap is a map, not a spec. Detailed requirements/scenarios are authored
-**just-in-time** inside each slice's change, so they reflect what was actually built.
+This roadmap is a map, not a spec — it describes the shape of the work, not the
+requirements/scenarios of what was actually built.
 
-> Platform already in place (archived changes): solution scaffold, Aspire orchestration,
-> testing foundation, managed-identity auth, Terraform test environment, per-service
-> containers, and trunk-based CI/CD. This roadmap is the domain on top of that.
+> Platform already in place: solution scaffold, Aspire orchestration, testing
+> foundation, managed-identity auth, Terraform test environment, and per-service
+> containers. This roadmap is the domain on top of that.
 
 ## Product flow
 
@@ -21,7 +20,7 @@ This roadmap is a map, not a spec. Detailed requirements/scenarios are authored
    RUN:
      1 READ      pull manifests from Azure DevOps (.csproj, Directory.Packages.props,
                  packages.lock.json)
-     2 ANALYZE   match package patterns (Orion180.*) → matched packages;
+     2 ANALYZE   match package patterns (Contoso.*) → matched packages;
                  resolve latest from the feed → outdated set
      3 APPLY     bump matched packages → restore → build (→ test);
                  bump OTHER deps only if the build demands it (collateral)
@@ -43,7 +42,7 @@ package patterns; the wildcard fans out across those repos.
 ```
   target-configuration:
     repos:    [ org/project/repo, ... ]         # explicit allowlist (no org crawl)
-    patterns: [ "Orion180.*" ]  (+ excludes)    # package-ID globs — what to target
+    patterns: [ "Contoso.*" ]  (+ excludes)    # package-ID globs — what to target
     feeds:    [ MyOrionServicesPackageFeed ]    # where "latest" is resolved
     policy:   strategy (patch|minor|major), ignore, targetBranch
 ```
@@ -51,11 +50,11 @@ package patterns; the wildcard fans out across those repos.
 Decisions:
 - **Explicit repo list** — the scheduler enqueues per configured repo (as the scaffold
   already does); there is no repository-discovery/org-crawl capability.
-- **Matched-first, collateral-if-needed** — update the `Orion180.*` packages first; touch
+- **Matched-first, collateral-if-needed** — update the `Contoso.*` packages first; touch
   other dependencies only when the build forces it (discovered at build time / by the AI loop).
-- **"Latest" comes from the private feed** (Orion180 feed); matching is on package ID as a glob.
+- **"Latest" comes from the private feed** (Contoso feed); matching is on package ID as a glob.
 - **Trigger is a scheduled timer** for now. Package-publish-triggered fan-out
-  ("published Orion180.Core 2.0 → cascade to all consumers") is a later direction.
+  ("published Contoso.Core 2.0 → cascade to all consumers") is a later direction.
 - **Build model: Option B (chosen at Slice 2)** — the tool does **not** build locally.
   It bumps versions and opens a PR; the targeted repo's own Azure DevOps CI validates
   the change on that PR. This keeps the remediation job lightweight (no SDK/git, no
@@ -74,7 +73,7 @@ Decisions:
 | 2 | **pull-request-authoring** | branch/commit + PR with a change summary | *(part of the ADO client)* |
 | 2 | **run-orchestration** | per-run state machine, status/history/artifacts persistence, idempotency (one open PR per repo/update-set), retries | remediation worker body |
 | 3 | **update-policy** | target-version selection by strategy (patch/minor/major relative to current) + ignore list; needs no build signal | *(new; wires existing `UpdatePolicy` fields into version selection)* |
-| 3b | **dependency-graph-alignment** *(collateral, split out)* | when a matched bump forces bumping its `Orion180.*` siblings — resolved from feed dependency metadata (local-first), not a local build | *(new; deliberate signal choice — see below)* |
+| 3b | **dependency-graph-alignment** *(collateral, split out)* | when a matched bump forces bumping its `Contoso.*` siblings — resolved from feed dependency metadata (local-first), not a local build | *(new; deliberate signal choice — see below)* |
 | 5 | **ai-remediation-loop** | MAF + Foundry agent for **compile/API** breaks (source edits) — the class version math can't fix | `MafRemediationAgent` placeholder |
 | 6 | **run-observability-ui** | run history, live status, drill into logs/diffs/AI transcript, retry | *(new)* |
 
@@ -107,16 +106,16 @@ connectivity; settle it inside the Slice-1 connectivity work (may become its own
 
 ```
   Slice 1  VISIBILITY  target-config + ADO read/auth + analysis
-           ▶ "across your N repos, here's every Orion180.* pin and what's outdated"
+           ▶ "across your N repos, here's every Contoso.* pin and what's outdated"
            ▶ read-only dependency map in the UI. No writes. First shippable thing.
 
   Slice 2  FIRST PR    update-execution + PR authoring + run status
-           ▶ bump matched Orion180.* to latest, open a PR; the repo's ADO CI
+           ▶ bump matched Contoso.* to latest, open a PR; the repo's ADO CI
              validates it (no local build, no AI)
 
   Slice 3  POLICY      update strategy (patch/minor/major) + ignore list; no build
                        signal needed — pure version selection
-  Slice 3b COLLATERAL  intra-family alignment: bumping one Orion180.* forces
+  Slice 3b COLLATERAL  intra-family alignment: bumping one Contoso.* forces
                        compatible bumps of its siblings, resolved from feed
                        dependency metadata (local-first, no build)
   Slice 5  AI LOOP     the MAF agent for compile/API breaks (source edits)
@@ -126,7 +125,7 @@ connectivity; settle it inside the Slice-1 connectivity work (may become its own
 > **Note on the collateral split (decided during exploration):** "collateral bumps
 > to pass the build" conflated two breakage classes. RESTORE-TIME conflicts (a bumped
 > package's declared dependencies clash with other pins) are **version math** — for an
-> internal family this is aligning the `Orion180.*` set, computable from feed metadata
+> internal family this is aligning the `Contoso.*` set, computable from feed metadata
 > with no build (Slice 3b). COMPILE-TIME / API breaks need source edits — that is the
 > AI loop (Slice 5). Slice 2's "no local build" removed the signal for both, but they
 > need different (and cheaper) signals. The old Slice-4 "run tests / classify breakage"
@@ -145,7 +144,7 @@ connectivity; settle it inside the Slice-1 connectivity work (may become its own
 
 ```
   TargetConfig (global-ish)          ManagedRepository (per repo)
-    patterns[]   "Orion180.*"          org / project / name
+    patterns[]   "Contoso.*"          org / project / name
     excludes[]                         enabled
     feeds[]                            targetBranch
     policy(strategy, ignore)           policy override? (optional)

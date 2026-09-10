@@ -17,3 +17,8 @@ output "queue_name" {
   description = "Remediation queue name."
   value       = azurerm_servicebus_queue.remediation_runs.name
 }
+
+output "review_commands_queue_name" {
+  description = "Review command queue name."
+  value       = azurerm_servicebus_queue.review_commands.name
+}

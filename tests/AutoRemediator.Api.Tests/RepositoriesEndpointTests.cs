@@ -24,14 +24,14 @@ public class RepositoriesEndpointTests(ApiFactory factory) : IClassFixture<ApiFa
     public async Task Get_returns_configured_repositories()
     {
         var store = new InMemoryRepositoryStore();
-        store.Seed(new ManagedRepository(Guid.NewGuid(), "orion180", "platform", "web-api"));
+        store.Seed(new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api"));
         var client = CreateClient(store);
 
         var repos = await client.GetFromJsonAsync<List<ManagedRepositoryDto>>("/api/repositories", TestContext.Current.CancellationToken);
 
         Assert.NotNull(repos);
         Assert.Single(repos);
-        Assert.Equal("orion180/platform/web-api", $"{repos[0].Organization}/{repos[0].Project}/{repos[0].Name}");
+        Assert.Equal("contoso/platform/web-api", $"{repos[0].Organization}/{repos[0].Project}/{repos[0].Name}");
     }
 
     [Fact]
@@ -42,7 +42,7 @@ public class RepositoriesEndpointTests(ApiFactory factory) : IClassFixture<ApiFa
 
         var response = await client.PostAsJsonAsync(
             "/api/repositories",
-            new ManagedRepositoryInput("orion180", "platform", "worker-jobs"),
+            new ManagedRepositoryInput("contoso", "platform", "worker-jobs"),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);

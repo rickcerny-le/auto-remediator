@@ -237,6 +237,18 @@ module "remediation_job" {
       # README as a follow-up; app runtime auth itself uses managed identity.
       authentication = []
     },
+    {
+      name             = "review-commands-queue-scaling"
+      custom_rule_type = "azure-servicebus"
+      metadata = {
+        namespace    = module.service_bus.namespace_name
+        queueName    = module.service_bus.review_commands_queue_name
+        messageCount = tostring(var.remediation_queue_scale_threshold)
+      }
+      # Same auth note as above: a queued review command must wake a
+      # scaled-to-zero replica just as a scheduled run does.
+      authentication = []
+    },
   ]
 
   env_vars = merge(

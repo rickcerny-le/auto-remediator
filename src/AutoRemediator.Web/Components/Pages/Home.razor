@@ -47,6 +47,26 @@
     </MudItem>
 </MudGrid>
 
+@if (_held.Count > 0)
+{
+    <MudPaper Elevation="1" Class="mb-4" data-testid="held-panel">
+        <div class="d-flex align-center pa-4" style="border-bottom:1px solid var(--mud-palette-lines-default);">
+            <MudText Typo="Typo.subtitle1" Style="font-weight:600;">Held for review</MudText>
+            <MudSpacer />
+            <span class="ar-pill warn"><span class="ar-dot"></span>@_held.Count repositor@(_held.Count == 1 ? "y" : "ies")</span>
+        </div>
+        <MudTable Items="_held" Dense="true" Hover="true" Class="ar-table" Elevation="0" OnRowClick="OnRunClick" T="RunSummaryDto" data-testid="held-table">
+            <HeaderContent>
+                <MudTh>Repository</MudTh><MudTh>Held since</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Repository"><span class="ar-mono">@Short(context.RepositorySlug)</span></MudTd>
+                <MudTd DataLabel="Held since"><span class="ar-mono" style="color:var(--mud-palette-text-secondary)">@context.StartedAtUtc.LocalDateTime.ToString("g")</span></MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
 <MudGrid>
     <MudItem xs="12" md="8">
         <MudPaper Elevation="1">
@@ -107,6 +127,7 @@
 @code {
     private int _repoCount, _runCount, _failedCount, _prCount;
     private List<RunSummaryDto> _recentRuns = [];
+    private List<RunSummaryDto> _held = [];
     private string? _patterns, _feeds, _ignore, _strategy;
     private bool _loading = true;
 
@@ -128,6 +149,7 @@
             _failedCount = runs.Count(r => r.Status == "Failed");
             _prCount = runs.Count(r => !string.IsNullOrEmpty(r.PullRequestUrl));
             _recentRuns = runs.Take(6).ToList();
+            _held = runs.Where(r => r.Status == "AwaitingReview").ToList();
 
             _patterns = settings is { Patterns.Count: > 0 } ? string.Join(", ", settings.Patterns) : null;
             _feeds = settings is { Feeds.Count: > 0 } ? string.Join(", ", settings.Feeds) : null;
@@ -152,13 +174,22 @@
         return i >= 0 ? slug[(i + 1)..] : slug;
     }
 
-    private static string Human(string status) => status == "NoUpdates" ? "No updates" : status;
+    private static string Human(string status) => status switch
+    {
+        "NoUpdates" => "No updates",
+        "AwaitingReview" => "Awaiting review",
+        "SkippedHeld" => "Held (skipped)",
+        _ => status,
+    };
 
     private static string PillClass(string status) => status switch
     {
         "Completed" => "ok",
         "Failed" => "bad",
         "NoUpdates" => "mute",
+        "AwaitingReview" => "warn",
+        "SkippedHeld" => "mute",
+        "Discarded" => "mute",
         _ => "run",
     };
 }
