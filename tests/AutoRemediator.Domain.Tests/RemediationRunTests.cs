@@ -225,4 +225,152 @@ public class RemediationRunTests
         Assert.Equal(2, run.RemediationAttempts);
         Assert.Equal("runs/abc/transcript.log", run.RemediationTranscriptReference);
     }
+
+    // ---- Review gate ---------------------------------------------------------------
+
+    [Fact]
+    public void RecordUpdates_sets_the_updates_without_finishing_the_run()
+    {
+        var run = NewRun();
+        run.Advance(RunStatus.Remediating);
+
+        run.RecordUpdates(Updates());
+
+        Assert.Single(run.Updates);
+        Assert.Equal(RunStatus.Remediating, run.Status);
+        Assert.Null(run.FinishedAtUtc);
+    }
+
+    [Fact]
+    public void AwaitingReview_requires_a_proposal_reference_and_does_not_finish_the_run()
+    {
+        var run = NewRun();
+        run.Advance(RunStatus.Remediating);
+
+        run.AwaitingReview("runs/abc/proposal.json", Started);
+
+        Assert.Equal(RunStatus.AwaitingReview, run.Status);
+        Assert.Equal("runs/abc/proposal.json", run.ProposalReference);
+        Assert.Null(run.FinishedAtUtc);
+    }
+
+    [Fact]
+    public void AwaitingReview_rejects_a_null_or_blank_reference()
+    {
+        var run = NewRun();
+        run.Advance(RunStatus.Remediating);
+
+        Assert.Throws<ArgumentException>(() => run.AwaitingReview("  ", Started));
+    }
+
+    [Fact]
+    public void ProposalReplaced_clears_the_review_note_and_increments_the_command_count()
+    {
+        var run = NewRun();
+        run.Advance(RunStatus.Remediating);
+        run.AwaitingReview("runs/abc/proposal.json", Started);
+        run.ReviewBlocked("the update branch moved");
+
+        run.ProposalReplaced("runs/abc/proposal-2.json", Finished);
+
+        Assert.Equal(RunStatus.AwaitingReview, run.Status);
+        Assert.Equal("runs/abc/proposal-2.json", run.ProposalReference);
+        Assert.Null(run.ReviewNote);
+        Assert.Equal(2, run.ReviewCommandCount);
+    }
+
+    [Fact]
+    public void ReviewBlocked_sets_a_note_without_setting_Error_or_finishing_the_run()
+    {
+        var run = NewRun();
+        run.Advance(RunStatus.Remediating);
+        run.AwaitingReview("runs/abc/proposal.json", Started);
+
+        run.ReviewBlocked("the update branch moved");
+
+        Assert.Equal(RunStatus.AwaitingReview, run.Status);
+        Assert.Equal("the update branch moved", run.ReviewNote);
+        Assert.Null(run.Error);
+        Assert.Null(run.FinishedAtUtc);
+        Assert.Equal(1, run.ReviewCommandCount);
+    }
+
+    [Fact]
+    public void Discarded_is_terminal()
+    {
+        var run = NewRun();
+        run.Advance(RunStatus.Remediating);
+        run.AwaitingReview("runs/abc/proposal.json", Started);
+
+        run.Discarded(Finished);
+
+        Assert.Equal(RunStatus.Discarded, run.Status);
+        Assert.Equal(Finished, run.FinishedAtUtc);
+    }
+
+    [Fact]
+    public void SkippedHeld_is_terminal()
+    {
+        var run = NewRun();
+
+        run.SkippedHeld(Finished);
+
+        Assert.Equal(RunStatus.SkippedHeld, run.Status);
+        Assert.Equal(Finished, run.FinishedAtUtc);
+    }
+
+    [Theory]
+    [InlineData(RunStatus.Reading)]
+    [InlineData(RunStatus.Analyzing)]
+    [InlineData(RunStatus.Applying)]
+    [InlineData(RunStatus.Verifying)]
+    [InlineData(RunStatus.Remediating)]
+    [InlineData(RunStatus.Pushing)]
+    [InlineData(RunStatus.CreatingPr)]
+    [InlineData(RunStatus.Completed)]
+    [InlineData(RunStatus.NoUpdates)]
+    [InlineData(RunStatus.VerificationFailed)]
+    [InlineData(RunStatus.Failed)]
+    [InlineData(RunStatus.Discarded)]
+    [InlineData(RunStatus.SkippedHeld)]
+    public void Each_review_transition_is_refused_from_any_status_other_than_AwaitingReview(RunStatus status)
+    {
+        RemediationRun Fresh()
+        {
+            var run = NewRun();
+            run.Advance(status);
+            return run;
+        }
+
+        Assert.Throws<InvalidOperationException>(() => Fresh().ProposalReplaced("runs/abc/p.json", Finished));
+        Assert.Throws<InvalidOperationException>(() => Fresh().ReviewBlocked("note"));
+        Assert.Throws<InvalidOperationException>(() => Fresh().Discarded(Finished));
+    }
+
+    [Fact]
+    public void Restore_round_trips_the_review_fields()
+    {
+        var run = RemediationRun.Restore(
+            Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", RunStatus.AwaitingReview,
+            Started, finishedAtUtc: null, Updates(), pullRequestUrl: null, error: null,
+            proposalReference: "runs/abc/proposal.json",
+            reviewNote: "the update branch moved",
+            reviewCommandCount: 3);
+
+        Assert.Equal("runs/abc/proposal.json", run.ProposalReference);
+        Assert.Equal("the update branch moved", run.ReviewNote);
+        Assert.Equal(3, run.ReviewCommandCount);
+    }
+
+    [Fact]
+    public void Restore_without_review_fields_defaults_the_command_count_to_zero()
+    {
+        var run = RemediationRun.Restore(
+            Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", RunStatus.Completed,
+            Started, Finished, Updates(), "https://dev.azure.com/pr/1", error: null);
+
+        Assert.Null(run.ProposalReference);
+        Assert.Null(run.ReviewNote);
+        Assert.Equal(0, run.ReviewCommandCount);
+    }
 }

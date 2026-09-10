@@ -102,6 +102,50 @@ public class AzureDevOpsClientTests
             Repo, "abc123", TestContext.Current.CancellationToken));
     }
 
+    // ---- Staleness classification (Decision 5) -----------------------------------------
+
+    [Theory]
+    [InlineData("GitRefUpdateStaleException")]
+    [InlineData("GitRefUpdateOldObjectIdMismatchException")]
+    [InlineData("GitItemNotFoundException")]
+    public async Task PushFiles_classifies_a_refused_ref_update_as_PushRejected(string typeKey)
+    {
+        var handler = new StubHandler(_ => Json(
+            $$"""{ "$id": "1", "typeKey": "{{typeKey}}", "message": "refused" }""",
+            HttpStatusCode.Conflict));
+
+        var ex = await Assert.ThrowsAsync<PushRejectedException>(() => Client(handler).PushFilesAsync(
+            Repo, "autoremediator/dependency-updates", "base-commit",
+            [new FileChange("/Directory.Packages.props", "<Project/>")], "msg", TestContext.Current.CancellationToken));
+
+        Assert.Equal(typeKey, ex.TypeKey);
+    }
+
+    [Fact]
+    public async Task PushFiles_keeps_throwing_what_it_throws_today_for_an_unrelated_failure()
+    {
+        var handler = new StubHandler(_ => Json(
+            """{ "$id": "1", "typeKey": "SomeOtherAzureDevOpsException", "message": "boom" }""",
+            HttpStatusCode.InternalServerError));
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => Client(handler).PushFilesAsync(
+            Repo, "autoremediator/dependency-updates", "base-commit",
+            [new FileChange("/Directory.Packages.props", "<Project/>")], "msg", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task PushFiles_keeps_throwing_HttpRequestException_when_the_body_is_not_json()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway)
+        {
+            Content = new StringContent("<html>bad gateway</html>", Encoding.UTF8, "text/html"),
+        });
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => Client(handler).PushFilesAsync(
+            Repo, "autoremediator/dependency-updates", "base-commit",
+            [new FileChange("/Directory.Packages.props", "<Project/>")], "msg", TestContext.Current.CancellationToken));
+    }
+
     private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 

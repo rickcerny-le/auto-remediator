@@ -1,9 +1,9 @@
-using System.Text;
 using AutoRemediator.Contracts.Messages;
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Analysis;
 using AutoRemediator.Infrastructure.AzureDevOps;
 using AutoRemediator.Infrastructure.Configuration;
+using AutoRemediator.Infrastructure.Review;
 using AutoRemediator.Infrastructure.Verification;
 using Microsoft.Extensions.Logging;
 
@@ -24,6 +24,7 @@ internal sealed class RemediationRunner(
     IVerificationLogStore logs,
     IAzureDevOpsClient azureDevOps,
     IRemediationRunStore runStore,
+    IChangeProposalStore proposals,
     TimeProvider timeProvider,
     ILogger<RemediationRunner> logger) : IRemediationRunner
 {
@@ -84,11 +85,13 @@ internal sealed class RemediationRunner(
 
             // The AI loop only helps with compile breaks. A restore conflict is version math, and an
             // agent handed one would either flail or "fix" it by editing a manifest.
+            IReadOnlyList<VerificationDiagnostic> provokingDiagnostics = [];
             if (verified.Outcome.Rejected && HasCompileDiagnostics(verified.Outcome))
             {
                 run.Advance(RunStatus.Remediating);
                 await runStore.SaveAsync(run, cancellationToken);
 
+                provokingDiagnostics = verified.Outcome.Diagnostics;
                 var repair = await remediation.RunAsync(run.Id, session, verified, cancellationToken);
                 var transcriptReference = await logs.StoreAsync(
                     run.Id, repair.Transcript, "remediation-transcript.md", cancellationToken);
@@ -108,6 +111,25 @@ internal sealed class RemediationRunner(
                 return run;
             }
 
+            run.RecordUpdates(plan.Updates);
+
+            // The gate fires only on a judgment call: the loop contributed edits and they verified.
+            // A mechanical bump that never entered the loop takes the branch below, untouched.
+            if (run.RemediationAttempts is > 0 && verified.Outcome.IsVerified)
+            {
+                var files = session.Workspace is null ? [] : await session.Workspace.ProposedFilesAsync(cancellationToken);
+                var proposal = new ChangeProposal(
+                    run.Id, run.RepositoryId, baseCommit, timeProvider.GetUtcNow(),
+                    files, provokingDiagnostics, run.RemediationAttempts.Value, run.RemediationTranscriptReference);
+
+                var reference = await proposals.StoreAsync(proposal, cancellationToken);
+                run.AwaitingReview(reference, timeProvider.GetUtcNow());
+                await runStore.SaveAsync(run, cancellationToken);
+                logger.LogInformation(
+                    "Run {RunId}: holding an agent-repaired change for {Slug} pending review.", run.Id, slug);
+                return run;
+            }
+
             run.Advance(RunStatus.Pushing);
             var changes = plan.ChangedManifests
                 .Select(c => new FileChange(c.Path, c.NewContent))
@@ -117,13 +139,13 @@ internal sealed class RemediationRunner(
                     : await session.Workspace.AppliedEditChangesAsync(cancellationToken))
                 .ToList();
 
-            await azureDevOps.PushFilesAsync(repo, UpdateBranch, baseCommit, changes, CommitMessage(plan), cancellationToken);
+            await azureDevOps.PushFilesAsync(repo, UpdateBranch, baseCommit, changes, PullRequestContent.CommitMessage(plan.Updates.Count), cancellationToken);
 
             run.Advance(RunStatus.CreatingPr);
             var prUrl = await azureDevOps.EnsurePullRequestAsync(
                 repo, UpdateBranch, repo.TargetBranch,
-                PullRequestTitle(plan),
-                PullRequestDescription(plan, verified.Outcome, run.RemediationAttempts),
+                PullRequestContent.Title(plan.Updates.Count),
+                PullRequestContent.Description(plan.Updates, verified.Outcome, run.RemediationAttempts),
                 cancellationToken);
 
             run.Completed(plan.Updates, prUrl, timeProvider.GetUtcNow());
@@ -141,65 +163,4 @@ internal sealed class RemediationRunner(
         }
     }
 
-    private static string CommitMessage(RepositoryUpdatePlan plan)
-        => $"Update {plan.Updates.Count} package(s) [AutoRemediator]";
-
-    private static string PullRequestTitle(RepositoryUpdatePlan plan)
-        => $"Automated dependency updates ({plan.Updates.Count} package(s))";
-
-    private static string PullRequestDescription(
-        RepositoryUpdatePlan plan,
-        VerificationOutcome verification,
-        int? remediationAttempts)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Automated dependency update by **AutoRemediator**.");
-        sb.AppendLine();
-        sb.AppendLine("| Package | From | To | Kind |");
-        sb.AppendLine("| --- | --- | --- | --- |");
-        foreach (var u in plan.Updates)
-        {
-            var kind = u.Kind == UpdateKind.Collateral ? "collateral" : "matched";
-            if (u.BeyondPolicy)
-            {
-                kind += " ⚠ beyond policy";
-            }
-
-            sb.AppendLine($"| {u.PackageId} | {u.FromVersion} | {u.ToVersion} | {kind} |");
-        }
-
-        if (plan.Updates.Any(u => u.BeyondPolicy))
-        {
-            sb.AppendLine();
-            sb.AppendLine("> ⚠ Some collateral bumps were escalated **beyond the update policy** to keep the dependency set consistent.");
-        }
-
-        sb.AppendLine();
-
-        // A reviewer must never be left to assume a change was verified when it was not.
-        if (verification.IsVerified)
-        {
-            sb.AppendLine("✅ **Verified locally** — `dotnet restore` and `dotnet build` both succeeded against this change.");
-        }
-        else
-        {
-            sb.AppendLine($"⚠ **Not verified locally** — verification was skipped: {verification.SkipReason}");
-        }
-
-        // Disclosed rather than left to be inferred from the diff: a reviewer must know that a
-        // model wrote source in here, and how many tries it took.
-        if (remediationAttempts is > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine($"🤖 **Contains AI-authored source edits.** A compile break introduced by this update was "
-                          + $"repaired by an AI agent over {remediationAttempts} attempt(s). Review the source changes "
-                          + "with that in mind — the full transcript of what the agent was shown and what it proposed "
-                          + "is attached to this run in AutoRemediator.");
-        }
-
-        sb.AppendLine();
-        sb.AppendLine("This pull request is still validated by this repository's own CI, which additionally runs the tests.");
-
-        return sb.ToString();
-    }
 }

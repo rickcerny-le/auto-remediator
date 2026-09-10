@@ -16,7 +16,7 @@ infra/terraform/
     identity/                    # user-assigned MI + RBAC role assignments
     container-registry/          # ACR Basic
     storage/                     # Standard LRS: table + blob container
-    service-bus/                 # Basic namespace + remediation-runs queue
+    service-bus/                 # Basic namespace + remediation-runs and review-commands queues
     ai-foundry/                  # AI Services account + gpt-4o-mini deployment
     container-apps-environment/  # Consumption env + Log Analytics
     container-app/               # reusable app (api, web)
@@ -128,12 +128,15 @@ lands.
 
 ### KEDA scaler auth (remediation job)
 
-The remediation job's Service Bus queue-scaling rule is defined but its scaler
-authentication is left empty. KEDA needs its own auth to read queue depth —
-identity-based auth is preferred (once available via the provider), or a
-listen-only connection-string secret can be supplied through the job module's
-`secrets` + `event_scale_rules[].authentication`. This is a deliberate follow-up
-so the app runtime stays secret-free.
+The remediation job has **two** Service Bus queue-scaling rules — one on
+`remediation-runs` (scheduled dependency updates) and one on `review-commands`
+(in-app review decisions) — so a queued review command wakes a scaled-to-zero
+replica exactly as a scheduled run does. Both rules' scaler authentication is
+left empty. KEDA needs its own auth to read queue depth — identity-based auth
+is preferred (once available via the provider), or a listen-only
+connection-string secret can be supplied through the job module's `secrets` +
+`event_scale_rules[].authentication`. This is a deliberate follow-up so the app
+runtime stays secret-free.
 
 ## State
 

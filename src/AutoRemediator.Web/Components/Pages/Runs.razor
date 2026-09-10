@@ -11,9 +11,12 @@
     <MudSpacer />
     <MudSelect T="string" @bind-Value="_status" Label="Status" Clearable="true" Style="max-width: 200px;" Class="mr-3" data-testid="status-filter">
         <MudSelectItem Value="@("Completed")">Completed</MudSelectItem>
+        <MudSelectItem Value="@("AwaitingReview")">Awaiting review</MudSelectItem>
         <MudSelectItem Value="@("NoUpdates")">NoUpdates</MudSelectItem>
         <MudSelectItem Value="@("VerificationFailed")">Verification failed</MudSelectItem>
         <MudSelectItem Value="@("Failed")">Failed</MudSelectItem>
+        <MudSelectItem Value="@("Discarded")">Discarded</MudSelectItem>
+        <MudSelectItem Value="@("SkippedHeld")">Held (skipped)</MudSelectItem>
     </MudSelect>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
                OnClick="LoadAsync" Disabled="_loading" data-testid="refresh-runs">
@@ -91,16 +94,22 @@ else
     {
         "NoUpdates" => "No updates",
         "VerificationFailed" => "Verification failed",
+        "AwaitingReview" => "Awaiting review",
+        "SkippedHeld" => "Held (skipped)",
         _ => status,
     };
 
     // VerificationFailed reads as a warning, not an error: the tool worked, the bump did not.
+    // AwaitingReview and SkippedHeld read as waiting on a person, not as finished or failed.
     private static string PillClass(string status) => status switch
     {
         "Completed" => "ok",
         "VerificationFailed" => "warn",
         "Failed" => "bad",
         "NoUpdates" => "mute",
+        "AwaitingReview" => "warn",
+        "SkippedHeld" => "mute",
+        "Discarded" => "mute",
         _ => "run",
     };
 }

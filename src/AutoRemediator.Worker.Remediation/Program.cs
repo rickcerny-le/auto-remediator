@@ -9,6 +9,7 @@ builder.AddKeyVaultConfiguration();
 builder.AddInfrastructure();
 builder.AddAgents();
 builder.Services.AddHostedService<RemediationWorker>();
+builder.Services.AddHostedService<ReviewCommandWorker>();
 
 var host = builder.Build();
 host.Run();

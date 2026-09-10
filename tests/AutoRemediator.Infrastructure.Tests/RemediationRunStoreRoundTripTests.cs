@@ -215,4 +215,80 @@ public class RemediationRunStoreRoundTripTests
         Assert.Equal(RunStatus.NoUpdates, saved!.Status);
         Assert.Null(saved.Verification);
     }
+
+    // ---- Review gate -----------------------------------------------------------------
+
+    [Fact]
+    public async Task AwaitingReview_run_round_trips_its_proposal_reference_and_command_count()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var provider = BuildProvider();
+        var store = provider.GetRequiredService<IRemediationRunStore>();
+
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        run.Advance(RunStatus.Remediating);
+        run.AwaitingReview($"{run.Id}/proposal.json", DateTimeOffset.UtcNow);
+        run.ReviewBlocked("the update branch moved");
+
+        if (!await TrySaveAsync(store, run, ct))
+        {
+            return;
+        }
+
+        var saved = await store.GetAsync(run.Id, ct);
+        Assert.NotNull(saved);
+        Assert.Equal(RunStatus.AwaitingReview, saved!.Status);
+        Assert.Equal($"{run.Id}/proposal.json", saved.ProposalReference);
+        Assert.Equal("the update branch moved", saved.ReviewNote);
+        Assert.Equal(1, saved.ReviewCommandCount);
+        Assert.Null(saved.FinishedAtUtc);
+    }
+
+    [Fact]
+    public async Task A_row_written_before_this_feature_deserializes_with_ReviewCommandCount_reading_as_zero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var provider = BuildProvider();
+        var store = provider.GetRequiredService<IRemediationRunStore>();
+
+        // Simulates a pre-existing row: completed, with none of the review columns ever written.
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/5", DateTimeOffset.UtcNow);
+
+        if (!await TrySaveAsync(store, run, ct))
+        {
+            return;
+        }
+
+        var saved = await store.GetAsync(run.Id, ct);
+        Assert.NotNull(saved);
+        Assert.Null(saved!.ProposalReference);
+        Assert.Null(saved.ReviewNote);
+        Assert.Equal(0, saved.ReviewCommandCount);
+    }
+
+    [Fact]
+    public async Task FindAwaitingReviewAsync_returns_the_held_run_for_a_repository_and_null_when_none_is_held()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var provider = BuildProvider();
+        var store = provider.GetRequiredService<IRemediationRunStore>();
+
+        var repoId = Guid.NewGuid();
+        var held = new RemediationRun(Guid.NewGuid(), repoId, "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        held.Advance(RunStatus.Remediating);
+        held.AwaitingReview($"{held.Id}/proposal.json", DateTimeOffset.UtcNow);
+
+        if (!await TrySaveAsync(store, held, ct))
+        {
+            return;
+        }
+
+        var found = await store.FindAwaitingReviewAsync(repoId, ct);
+        Assert.NotNull(found);
+        Assert.Equal(held.Id, found!.Id);
+
+        var quietRepoId = Guid.NewGuid();
+        Assert.Null(await store.FindAwaitingReviewAsync(quietRepoId, ct));
+    }
 }

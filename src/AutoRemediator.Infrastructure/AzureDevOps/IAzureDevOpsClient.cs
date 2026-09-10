@@ -56,3 +56,14 @@ public interface IAzureDevOpsClient
         string description,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Azure DevOps refused a push because the branch moved since <c>oldObjectId</c> was captured, or
+/// because an edited file no longer exists upstream (a deletion). The push's compare-and-swap is
+/// what makes this detectable; <see cref="TypeKey"/> is the Azure DevOps exception name the
+/// response body carried.
+/// </summary>
+public sealed class PushRejectedException(string typeKey, string message) : Exception(message)
+{
+    public string TypeKey { get; } = typeKey;
+}

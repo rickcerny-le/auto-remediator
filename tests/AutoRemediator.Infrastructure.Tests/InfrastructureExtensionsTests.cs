@@ -1,6 +1,7 @@
 using AutoRemediator.Infrastructure;
 using AutoRemediator.Infrastructure.AzureDevOps;
 using AutoRemediator.Infrastructure.Messaging;
+using AutoRemediator.Infrastructure.Review;
 using AutoRemediator.Infrastructure.Storage;
 using Azure.Data.Tables;
 using Azure.Messaging.ServiceBus;
@@ -33,6 +34,8 @@ public class InfrastructureExtensionsTests
         Assert.NotNull(provider.GetService<IMessagePublisher>());
         Assert.NotNull(provider.GetService<IMessageConsumer>());
         Assert.NotNull(provider.GetService<IAzureDevOpsClient>());
+        Assert.NotNull(provider.GetService<IChangeProposalStore>());
+        Assert.NotNull(provider.GetService<IReviewCommandHandler>());
     }
 
     [Fact]

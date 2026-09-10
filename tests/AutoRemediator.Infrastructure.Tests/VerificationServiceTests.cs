@@ -379,6 +379,8 @@ public class VerificationServiceTests
             => Task.FromResult(EditApplication.Accepted(edit.Path));
         public Task<IReadOnlyList<FileChange>> AppliedEditChangesAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<FileChange>>([]);
+        public Task<IReadOnlyList<ProposedFile>> ProposedFilesAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<ProposedFile>>([]);
         public void Dispose() => Disposed = true;
     }
 

@@ -30,9 +30,9 @@ The system SHALL run an attempt loop over a single materialized working tree: th
 
 The loop SHALL end as soon as verification succeeds, or when a bound is reached.
 
-#### Scenario: A repaired change is verified and pushed
+#### Scenario: A repaired change is verified and held for review
 - **WHEN** the agent's edits make the build succeed on a later attempt
-- **THEN** the loop ends, the run is treated as verified, and the change is pushed including the agent's source edits
+- **THEN** the loop ends, the run is treated as verified, and the change — including the agent's source edits — is held for a person to approve rather than pushed immediately (see the change-review-gate capability)
 
 #### Scenario: Attempts accumulate rather than reset
 - **WHEN** a second attempt runs after a first attempt edited a file
@@ -91,7 +91,7 @@ The agent SHALL propose edits only; it SHALL NOT be able to execute arbitrary co
 The system SHALL write only to the per-repository update branch and SHALL always deliver changes as a pull request. It SHALL NOT push to a repository's target branch or to any protected branch, whether or not an agent contributed to the change.
 
 #### Scenario: Agent-authored edits still go through a pull request
-- **WHEN** a run in which the agent edited source completes successfully
+- **WHEN** a run in which the agent edited source is approved after review
 - **THEN** the edits reach the repository as a commit on the per-repository update branch with a pull request into the target branch, and the target branch is not written to directly
 
 ### Requirement: The transcript is captured as a run artifact

@@ -14,6 +14,7 @@ var blobs = storage.AddBlobs("blobs");
 var serviceBus = builder.AddAzureServiceBus("servicebus")
     .RunAsEmulator();
 serviceBus.AddServiceBusQueue(RemediationQueues.RemediationRuns);
+serviceBus.AddServiceBusQueue(RemediationQueues.ReviewCommands);
 
 // --- Model for the AI remediation loop (Slice 5 spike) ---
 // Runs locally in development; the deployed environment uses the provisioned Foundry account.

@@ -50,6 +50,14 @@ public interface IVerificationWorkspace : IDisposable
     /// paths. Empty when no proposed edit was applied.
     /// </summary>
     Task<IReadOnlyList<FileChange>> AppliedEditChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every changed file — manifest edits, regenerated lock files, and applied agent edits — paired
+    /// with the content it had before the edit landed, read from the tree that was actually
+    /// compiled rather than fetched later. This is the before-side a <see cref="ChangeProposal"/>
+    /// shows on review (FR-010).
+    /// </summary>
+    Task<IReadOnlyList<ProposedFile>> ProposedFilesAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>The outcome of offering one proposed edit to the workspace.</summary>
@@ -213,6 +221,12 @@ internal sealed class VerificationWorkspace(string root) : IVerificationWorkspac
     /// <summary>Repository-relative paths the agent successfully edited, in application order.</summary>
     private readonly List<string> _appliedEdits = [];
 
+    /// <summary>Content each applied agent edit had immediately before it was written, keyed by relative path.</summary>
+    private readonly Dictionary<string, string> _appliedEditOriginals = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Manifest content as it stood before <see cref="ApplyEditsAsync"/> overwrote it, keyed by the edit's rooted path.</summary>
+    private readonly Dictionary<string, string> _manifestBaseline = new(StringComparer.OrdinalIgnoreCase);
+
     private Dictionary<string, string> _lockFileBaseline = new(StringComparer.OrdinalIgnoreCase);
 
     public string Root => root;
@@ -283,6 +297,7 @@ internal sealed class VerificationWorkspace(string root) : IVerificationWorkspac
                     $"'{edit.Path}' is not present in the extracted tree, so the change cannot be verified against it.");
             }
 
+            _manifestBaseline[edit.Path] = await File.ReadAllTextAsync(path, cancellationToken);
             await File.WriteAllTextAsync(path, edit.NewContent, cancellationToken);
         }
     }
@@ -441,6 +456,7 @@ internal sealed class VerificationWorkspace(string root) : IVerificationWorkspac
             return EditApplication.Rejected(edit.Path, "the file is not present in the extracted tree");
         }
 
+        _appliedEditOriginals[relative] = await File.ReadAllTextAsync(absolute, cancellationToken);
         await File.WriteAllTextAsync(absolute, edit.NewContent, cancellationToken);
         _appliedEdits.Add(relative);
 
@@ -465,6 +481,40 @@ internal sealed class VerificationWorkspace(string root) : IVerificationWorkspac
         }
 
         return changes;
+    }
+
+    public async Task<IReadOnlyList<ProposedFile>> ProposedFilesAsync(CancellationToken cancellationToken = default)
+    {
+        var files = new List<ProposedFile>();
+
+        foreach (var (path, original) in _manifestBaseline)
+        {
+            var absolute = Resolve(path);
+            var current = File.Exists(absolute) ? await File.ReadAllTextAsync(absolute, cancellationToken) : original;
+            files.Add(new ProposedFile(path, original, current!, ProposedFileOrigin.Manifest));
+        }
+
+        foreach (var change in await LockFileChangesAsync(cancellationToken))
+        {
+            var absolute = Resolve(change.Path);
+            _lockFileBaseline.TryGetValue(absolute, out var original);
+            files.Add(new ProposedFile(change.Path, original, change.Content, ProposedFileOrigin.LockFile));
+        }
+
+        foreach (var relative in _appliedEdits)
+        {
+            var absolute = Resolve(relative);
+            if (!File.Exists(absolute))
+            {
+                continue;
+            }
+
+            var current = await File.ReadAllTextAsync(absolute, cancellationToken);
+            _appliedEditOriginals.TryGetValue(relative, out var original);
+            files.Add(new ProposedFile("/" + relative, original, current, ProposedFileOrigin.AgentEdit));
+        }
+
+        return files;
     }
 
     /// <summary>

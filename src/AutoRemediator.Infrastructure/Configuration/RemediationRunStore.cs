@@ -13,6 +13,9 @@ public interface IRemediationRunStore
     Task<IReadOnlyList<RemediationRun>> ListByRepositoryAsync(Guid repositoryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RemediationRun>> ListAllAsync(CancellationToken cancellationToken = default);
     Task<RemediationRun?> GetAsync(Guid runId, CancellationToken cancellationToken = default);
+
+    /// <summary>The run holding this repository's open proposal, or null when the repository is not held.</summary>
+    Task<RemediationRun?> FindAwaitingReviewAsync(Guid repositoryId, CancellationToken cancellationToken = default);
 }
 
 internal sealed class RemediationRunEntity : ITableEntity
@@ -39,6 +42,10 @@ internal sealed class RemediationRunEntity : ITableEntity
     public int? RemediationAttempts { get; set; }
     public string? RemediationTranscriptReference { get; set; }
 
+    public string? ProposalReference { get; set; }
+    public string? ReviewNote { get; set; }
+    public int? ReviewCommandCount { get; set; }
+
     public static RemediationRunEntity FromDomain(RemediationRun run) => new()
     {
         PartitionKey = run.RepositoryId.ToString(),
@@ -58,6 +65,9 @@ internal sealed class RemediationRunEntity : ITableEntity
         VerificationLogReference = run.Verification?.LogReference,
         RemediationAttempts = run.RemediationAttempts,
         RemediationTranscriptReference = run.RemediationTranscriptReference,
+        ProposalReference = run.ProposalReference,
+        ReviewNote = run.ReviewNote,
+        ReviewCommandCount = run.ReviewCommandCount,
     };
 
     public RemediationRun ToDomain()
@@ -67,7 +77,8 @@ internal sealed class RemediationRunEntity : ITableEntity
         return RemediationRun.Restore(
             Guid.Parse(RowKey), Guid.Parse(PartitionKey), RepositorySlug, status,
             StartedAtUtc, FinishedAtUtc, updates, PullRequestUrl, Error, ToVerification(),
-            RemediationAttempts, RemediationTranscriptReference);
+            RemediationAttempts, RemediationTranscriptReference,
+            ProposalReference, ReviewNote, ReviewCommandCount ?? 0);
     }
 
     private VerificationOutcome? ToVerification()
@@ -128,6 +139,21 @@ internal sealed class TableRemediationRunStore(ITableStore tableStore) : IRemedi
 
         await foreach (var entity in table.QueryAsync<RemediationRunEntity>(
             e => e.RowKey == runId.ToString(), cancellationToken: cancellationToken))
+        {
+            return entity.ToDomain();
+        }
+
+        return null;
+    }
+
+    public async Task<RemediationRun?> FindAwaitingReviewAsync(Guid repositoryId, CancellationToken cancellationToken = default)
+    {
+        var table = await tableStore.GetTableAsync(TableName, cancellationToken);
+        var partitionKey = repositoryId.ToString();
+        var status = nameof(RunStatus.AwaitingReview);
+
+        await foreach (var entity in table.QueryAsync<RemediationRunEntity>(
+            e => e.PartitionKey == partitionKey && e.Status == status, cancellationToken: cancellationToken))
         {
             return entity.ToDomain();
         }

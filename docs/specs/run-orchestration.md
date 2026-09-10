@@ -7,19 +7,19 @@ Defines the remediation run state machine, persisted run history, and per-messag
 ## Requirements
 
 ### Requirement: Remediation run state machine
-On consuming a `RemediationRunRequested` message, the remediation worker SHALL execute a run through the stages Reading → Analyzing → Applying → Verifying → Remediating → Pushing → CreatingPR, ending in one terminal status: `Completed` (a PR was opened or refreshed), `NoUpdates` (nothing matched was outdated), `VerificationFailed` (the computed change was rejected and not repaired, so no PR was opened), or `Failed` (an unexpected error occurred during the run). The `Applying` stage SHALL produce the edited manifests into the working tree without pushing; pushing SHALL occur only after verification has been attempted. The `Remediating` stage SHALL run only when verification rejected the change with compile diagnostics, and SHALL be skipped otherwise. The `NoUpdates` short-circuit SHALL occur before any working tree is materialized, so a run with nothing to do performs no download, restore, or build.
+On consuming a `RemediationRunRequested` message, the remediation worker SHALL execute a run through the stages Reading → Analyzing → Applying → Verifying → Remediating → Pushing → CreatingPR, ending in one of: `Completed` (a PR was opened or refreshed), `AwaitingReview` (a verified, agent-repaired change is held for a person — non-terminal and durable; see the change-review-gate capability), `NoUpdates` (nothing matched was outdated), `VerificationFailed` (the computed change was rejected and not repaired, so no PR was opened), or `Failed` (an unexpected error occurred during the run). The `Applying` stage SHALL produce the edited manifests into the working tree without pushing; pushing SHALL occur only after verification has been attempted, and only when the change did not require an agent repair. The `Remediating` stage SHALL run only when verification rejected the change with compile diagnostics, and SHALL be skipped otherwise. The `NoUpdates` short-circuit SHALL occur before any working tree is materialized, so a run with nothing to do performs no download, restore, or build.
 
-#### Scenario: Successful run reaches Completed
-- **WHEN** a run finds matched outdated packages, applies the bumps, verification succeeds, and it opens/refreshes a pull request
+#### Scenario: Successful mechanical run reaches Completed
+- **WHEN** a run finds matched outdated packages, applies the bumps, verification succeeds with no agent involvement, and it opens/refreshes a pull request
 - **THEN** the run ends with status `Completed` and records the pull request link
 
 #### Scenario: Nothing to update reaches NoUpdates
 - **WHEN** a run finds no matched outdated packages
 - **THEN** the run ends with status `NoUpdates`, no working tree is downloaded, no verification runs, and no branch or pull request is created
 
-#### Scenario: A repaired change reaches Completed
+#### Scenario: A repaired change is held rather than pushed
 - **WHEN** verification rejects the change with compile diagnostics and the remediation loop produces edits that verify
-- **THEN** the run passes through `Remediating`, ends with status `Completed`, and records the pull request link
+- **THEN** the run passes through `Remediating`, ends with status `AwaitingReview`, a change proposal is persisted, and no push or pull request occurs until a person approves it (see the change-review-gate capability)
 
 #### Scenario: An unrepaired change reaches VerificationFailed
 - **WHEN** the remediation loop exhausts its bounds without a building tree
@@ -59,6 +59,17 @@ Each run SHALL be persisted to Table Storage with at least its id, repository, s
 #### Scenario: A run that never verified has no outcome
 - **WHEN** a run that ended in `NoUpdates` is persisted and read back
 - **THEN** it has no verification outcome and no remediation attempts
+
+### Requirement: A held repository receives no new runs
+The scheduler SHALL consult the run history before enqueueing a repository, and SHALL skip enqueueing (recording the skip as a `SkippedHeld` run) when the repository already has a run in `AwaitingReview`. This SHALL end for a repository as soon as its held run is resolved (approved or discarded).
+
+#### Scenario: A held repository is skipped
+- **WHEN** the scheduler runs and a repository has an open proposal
+- **THEN** the repository is not enqueued, nothing is analyzed or verified, and a `SkippedHeld` run is recorded naming the repository
+
+#### Scenario: Resolution ends the skip
+- **WHEN** a repository's held proposal has been approved or discarded
+- **THEN** the next scheduler pass enqueues the repository normally
 
 ### Requirement: One run per requested message
 Each `RemediationRunRequested` SHALL produce exactly one persisted run; consuming the same logical request SHALL NOT open more than one pull request for that repository (idempotency is preserved by the per-repo branch/PR reuse).

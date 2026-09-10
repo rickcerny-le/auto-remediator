@@ -39,6 +39,7 @@ genuinely new capability.
 | [pull-request-authoring](pull-request-authoring.md) | Branch, commit, PR body, AI-edit disclosure |
 | [run-orchestration](run-orchestration.md) | Scheduler enqueue, queue consumption, run lifecycle |
 | [run-observability-ui](run-observability-ui.md) | Run status, history, logs, diffs, transcripts |
+| [change-review-gate](change-review-gate.md) | Holding an AI-repaired change for approval; the four review commands; staleness; held-repository visibility |
 | [web-ui-foundation](web-ui-foundation.md) | Blazor Web App shell and interactivity model |
 | [managed-identity-auth](managed-identity-auth.md) | Managed identity to Azure; no credentials in source |
 | [terraform-iac](terraform-iac.md) | Modular Terraform, budget-SKU test environment |

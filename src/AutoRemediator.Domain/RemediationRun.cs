@@ -23,6 +23,18 @@ public enum RunStatus
     /// </summary>
     VerificationFailed,
     Failed,
+
+    /// <summary>
+    /// A verified, agent-repaired change is held for a person. Non-terminal and durable — the only
+    /// status that is neither in-flight within a single worker call nor a terminal outcome.
+    /// </summary>
+    AwaitingReview,
+
+    /// <summary>Terminal. A person rejected the proposal; nothing was pushed.</summary>
+    Discarded,
+
+    /// <summary>Terminal. A scheduled run was skipped because the repository already had an open proposal.</summary>
+    SkippedHeld,
 }
 
 /// <summary>Why a package was bumped.</summary>
@@ -82,7 +94,81 @@ public sealed class RemediationRun : Entity<Guid>
     /// <summary>Blob reference for the AI transcript, or null when the loop never ran or it could not be stored.</summary>
     public string? RemediationTranscriptReference { get; private set; }
 
+    /// <summary>Blob reference for the proposal payload. Non-null exactly while <see cref="Status"/> is <see cref="RunStatus.AwaitingReview"/>, and retained afterwards.</summary>
+    public string? ProposalReference { get; private set; }
+
+    /// <summary>Why a proposal is still waiting after a command. Distinct from <see cref="Error"/>, which means the run failed.</summary>
+    public string? ReviewNote { get; private set; }
+
+    /// <summary>How many review commands have been executed against this run.</summary>
+    public int ReviewCommandCount { get; private set; }
+
     public void Advance(RunStatus status) => Status = status;
+
+    /// <summary>
+    /// Records which packages this run bumped, without ending the run. A held run needs this list
+    /// for its pull request once approved, and a rebuild or retry needs it to reconstruct the
+    /// update plan — exactly as <see cref="Completed"/> and <see cref="VerificationFailed"/> already
+    /// record it for the mechanical path.
+    /// </summary>
+    public void RecordUpdates(IEnumerable<DependencyUpdate> updates)
+    {
+        _updates.Clear();
+        _updates.AddRange(updates);
+    }
+
+    /// <summary>The loop contributed edits and the result verified: rest for a person instead of pushing.</summary>
+    public void AwaitingReview(string proposalReference, DateTimeOffset at)
+    {
+        ProposalReference = Guard.AgainstNullOrWhiteSpace(proposalReference);
+        Status = RunStatus.AwaitingReview;
+    }
+
+    /// <summary>Rebuild or retry succeeded: the proposal is replaced and the wait continues.</summary>
+    public void ProposalReplaced(string proposalReference, DateTimeOffset at)
+    {
+        RequireAwaitingReview();
+        ProposalReference = Guard.AgainstNullOrWhiteSpace(proposalReference);
+        ReviewNote = null;
+        ReviewCommandCount++;
+    }
+
+    /// <summary>
+    /// A command could not complete the proposal's disposition — staleness, a failed
+    /// re-verification, an unavailable model. The run stays <see cref="RunStatus.AwaitingReview"/>;
+    /// this is not a failure (FR-022).
+    /// </summary>
+    public void ReviewBlocked(string note)
+    {
+        RequireAwaitingReview();
+        ReviewNote = Guard.AgainstNullOrWhiteSpace(note);
+        ReviewCommandCount++;
+    }
+
+    /// <summary>A person rejected the proposal. Terminal; nothing was pushed.</summary>
+    public void Discarded(DateTimeOffset at)
+    {
+        RequireAwaitingReview();
+        ReviewCommandCount++;
+        Status = RunStatus.Discarded;
+        FinishedAtUtc = at;
+    }
+
+    /// <summary>A scheduled run was skipped because the repository already had an open proposal.</summary>
+    public void SkippedHeld(DateTimeOffset at)
+    {
+        Status = RunStatus.SkippedHeld;
+        FinishedAtUtc = at;
+    }
+
+    private void RequireAwaitingReview()
+    {
+        if (Status != RunStatus.AwaitingReview)
+        {
+            throw new InvalidOperationException(
+                $"A review command requires the run to be AwaitingReview, but it is {Status}.");
+        }
+    }
 
     /// <summary>Records the local verification result. Does not itself end the run.</summary>
     public void Verified(VerificationOutcome outcome) => Verification = Guard.AgainstNull(outcome);
@@ -147,7 +233,10 @@ public sealed class RemediationRun : Entity<Guid>
         string? error,
         VerificationOutcome? verification = null,
         int? remediationAttempts = null,
-        string? remediationTranscriptReference = null)
+        string? remediationTranscriptReference = null,
+        string? proposalReference = null,
+        string? reviewNote = null,
+        int reviewCommandCount = 0)
     {
         var run = new RemediationRun(id, repositoryId, repositorySlug, startedAtUtc)
         {
@@ -158,6 +247,9 @@ public sealed class RemediationRun : Entity<Guid>
             Verification = verification,
             RemediationAttempts = remediationAttempts,
             RemediationTranscriptReference = remediationTranscriptReference,
+            ProposalReference = proposalReference,
+            ReviewNote = reviewNote,
+            ReviewCommandCount = reviewCommandCount,
         };
         run._updates.AddRange(updates);
         return run;

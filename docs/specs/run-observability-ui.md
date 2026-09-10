@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Exposes persisted remediation runs for observability: API endpoints for listing runs across repositories and viewing a single run's detail, plus Web pages presenting a runs feed and a run detail view so operators can inspect run status, applied updates, PR links, and errors.
+Exposes persisted remediation runs for observability: API endpoints for listing runs across repositories and viewing a single run's detail, plus Web pages presenting a runs feed and a run detail view so operators can inspect run status, applied updates, PR links, and errors. The `AwaitingReview`, `Discarded` and `SkippedHeld` statuses this capability's list and detail surfaces already render generically are given their review-specific meaning, controls and evidence by the change-review-gate capability.
 
 ## Requirements
 

@@ -140,6 +140,39 @@ Guardrails worth knowing:
 Without Foundry Local installed the system runs normally and still opens pull requests; only
 AI repair is unavailable, and runs record that rather than implying an attempt.
 
+## The in-app review gate
+
+A change the AI loop repaired is never pushed automatically. When the loop's edits produce a
+change that verifies, the run rests in `AwaitingReview` instead of advancing to a push: the
+proposal — before/after content for every changed file, the diagnostics that provoked the repair,
+the attempt count, and the verification time — is stored, and a person decides from the run detail
+page. A mechanical bump that verified without the AI loop is unaffected and still pushes and opens
+its pull request in the same run, exactly as before this feature existed.
+
+Four commands are available from a held run: **Approve** (push the stored proposal and open the
+pull request, no re-verification), **Rebuild** (re-verify at the branch's current head, replacing
+the proposal on success), **Retry** (run the AI loop again from the original diagnostics, dropping
+the previous agent edits, spending a fresh token budget), and **Discard** (reject the proposal;
+nothing is pushed). A stale approval — the update branch moved since the proposal was verified — is
+refused and reported as recoverable, with Rebuild as the remedy; it is never reported as a failure.
+
+**A held repository receives no new scheduled runs.** The scheduler skips a repository with an open
+proposal and records the skip as a `SkippedHeld` run, so a held repository reads as held — visible
+on the Web app's overview page and in the runs list — rather than as merely quiet.
+
+**Local vs. deployed shape of the review-command consumer.** Locally, the worker that executes
+review commands (`ReviewCommandWorker`) runs as a second `BackgroundService` inside the same
+`AutoRemediator.Worker.Remediation` process as the scheduled-run consumer. Deployed, that process
+is an event-driven Container Apps Job scaled by KEDA on Service Bus queue depth; the review-command
+queue (`review-commands`) is a second scale rule on that same Job, so a queued command wakes a
+replica that scaled to zero exactly as a scheduled run does. This is the one place this feature's
+deployed shape differs from its local shape.
+
+**The approve control is unauthenticated.** The app has no authentication yet, so anyone who can
+reach the Web app can approve a change that pushes to the target repository. This is accepted for
+local use; authentication is planned before this is exposed in a deployed environment, and this
+caveat should not be treated as resolved by anything in this feature.
+
 ## Configuration
 
 | Key | Purpose |
@@ -148,3 +181,4 @@ AI repair is unavailable, and runs record that rather than implying an attempt.
 | `ConnectionStrings:chat` | Injected by the AppHost — the model the AI loop uses (Foundry Local locally, the Foundry deployment when deployed). Absent means no AI repair. |
 | `Agents:MaxAttempts` / `Agents:TokenBudget` / `Agents:AttemptTimeout` | Bounds on the AI loop: attempts per run (3), tokens per run (120k), and per-model-call timeout (3m). |
 | `Scheduler:DevLoopEnabled` / `Scheduler:DevLoopIntervalSeconds` | Local-only re-trigger of the run-once scheduler. |
+| `AzureDevOps:Pat` | Personal access token. Needs **Code (Read & Write)** plus pull-request contribution — approving a held proposal pushes a branch and opens a pull request, so a read-only token is not enough. |
