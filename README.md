@@ -182,3 +182,16 @@ caveat should not be treated as resolved by anything in this feature.
 | `Agents:MaxAttempts` / `Agents:TokenBudget` / `Agents:AttemptTimeout` | Bounds on the AI loop: attempts per run (3), tokens per run (120k), and per-model-call timeout (3m). |
 | `Scheduler:DevLoopEnabled` / `Scheduler:DevLoopIntervalSeconds` | Local-only re-trigger of the run-once scheduler. |
 | `AzureDevOps:Pat` | Personal access token. Needs **Code (Read & Write)** plus pull-request contribution — approving a held proposal pushes a branch and opens a pull request, so a read-only token is not enough. |
+
+## Recommended agent skills
+
+This repo doesn't ship a fixed set of AI-agent skills — `.claude/skills/`, `.claude/agents/`,
+`.agents/skills/`, and `.agents/agents/` are gitignored so each developer can install their own
+without churning the repo. If you're using Claude Code (or another skill-compatible agent) against
+this codebase, these are worth adding:
+
+- **aspire** / **aspire-orchestration** / **aspire-init** / **aspire-deployment** /
+  **aspire-monitoring** — this solution is a .NET Aspire app; these cover starting/stopping the
+  AppHost, scaffolding, deployment, and log/trace inspection without falling back to raw `dotnet
+  run` (which leaves orphaned processes holding file locks — see [Run locally](#run-locally-aspire)).
+- **playwright-cli** — drives the Playwright functional smoke test against a running Web app.
