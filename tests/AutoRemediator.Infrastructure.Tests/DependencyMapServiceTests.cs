@@ -14,8 +14,8 @@ public class DependencyMapServiceTests
     private const string Manifest = """
         <Project>
           <ItemGroup>
-            <PackageVersion Include="Orion180.Core" Version="1.0.0" />
-            <PackageVersion Include="Orion180.Data" Version="2.0.0" />
+            <PackageVersion Include="Contoso.Core" Version="1.0.0" />
+            <PackageVersion Include="Contoso.Data" Version="2.0.0" />
             <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
           </ItemGroup>
         </Project>
@@ -24,11 +24,11 @@ public class DependencyMapServiceTests
     [Fact]
     public async Task Build_maps_matched_packages_with_status()
     {
-        var settings = new TargetingSettings(["Orion180.*"], feeds: ["https://feed"], policy: new UpdatePolicy(UpdateStrategy.Major, []));
+        var settings = new TargetingSettings(["Contoso.*"], feeds: ["https://feed"], policy: new UpdatePolicy(UpdateStrategy.Major, []));
         var versions = new Dictionary<string, IReadOnlyList<string>>
         {
-            ["Orion180.Core"] = ["1.0.0", "2.5.0"], // outdated
-            ["Orion180.Data"] = ["2.0.0"],          // up-to-date
+            ["Contoso.Core"] = ["1.0.0", "2.5.0"], // outdated
+            ["Contoso.Data"] = ["2.0.0"],          // up-to-date
         };
 
         await using var provider = BuildProvider(settings, versions);
@@ -36,12 +36,12 @@ public class DependencyMapServiceTests
 
         Assert.Equal(2, map.Entries.Count); // Newtonsoft.Json not matched
 
-        var core = Assert.Single(map.Entries, e => e.PackageId == "Orion180.Core");
+        var core = Assert.Single(map.Entries, e => e.PackageId == "Contoso.Core");
         Assert.Equal("1.0.0", core.CurrentVersion);
         Assert.Equal("2.5.0", core.LatestVersion);
         Assert.Equal(DependencyStatus.Outdated, core.Status);
 
-        var data = Assert.Single(map.Entries, e => e.PackageId == "Orion180.Data");
+        var data = Assert.Single(map.Entries, e => e.PackageId == "Contoso.Data");
         Assert.Equal(DependencyStatus.UpToDate, data.Status);
     }
 
@@ -49,29 +49,29 @@ public class DependencyMapServiceTests
     public async Task Ignored_package_is_held_and_shown_as_ignored()
     {
         var settings = new TargetingSettings(
-            ["Orion180.*"], feeds: ["https://feed"],
-            policy: new UpdatePolicy(UpdateStrategy.Major, ["Orion180.Data"]));
+            ["Contoso.*"], feeds: ["https://feed"],
+            policy: new UpdatePolicy(UpdateStrategy.Major, ["Contoso.Data"]));
         var versions = new Dictionary<string, IReadOnlyList<string>>
         {
-            ["Orion180.Core"] = ["1.0.0", "2.5.0"],
-            ["Orion180.Data"] = ["2.0.0", "3.0.0"], // would be outdated, but ignored
+            ["Contoso.Core"] = ["1.0.0", "2.5.0"],
+            ["Contoso.Data"] = ["2.0.0", "3.0.0"], // would be outdated, but ignored
         };
 
         await using var provider = BuildProvider(settings, versions);
         var map = await provider.GetRequiredService<IDependencyMapService>().BuildAsync(TestContext.Current.CancellationToken);
 
-        var data = Assert.Single(map.Entries, e => e.PackageId == "Orion180.Data");
+        var data = Assert.Single(map.Entries, e => e.PackageId == "Contoso.Data");
         Assert.Equal(DependencyStatus.Ignored, data.Status);
         Assert.Null(data.LatestVersion);
 
-        var core = Assert.Single(map.Entries, e => e.PackageId == "Orion180.Core");
+        var core = Assert.Single(map.Entries, e => e.PackageId == "Contoso.Core");
         Assert.Equal(DependencyStatus.Outdated, core.Status);
     }
 
     [Fact]
     public async Task No_versions_from_feed_yields_unknown_status()
     {
-        var settings = new TargetingSettings(["Orion180.*"], feeds: ["https://feed"]);
+        var settings = new TargetingSettings(["Contoso.*"], feeds: ["https://feed"]);
 
         await using var provider = BuildProvider(settings, new Dictionary<string, IReadOnlyList<string>>());
         var map = await provider.GetRequiredService<IDependencyMapService>().BuildAsync(TestContext.Current.CancellationToken);
@@ -81,7 +81,7 @@ public class DependencyMapServiceTests
 
     private static ServiceProvider BuildProvider(TargetingSettings settings, IReadOnlyDictionary<string, IReadOnlyList<string>> versions)
     {
-        var repo = new ManagedRepository(Guid.NewGuid(), "orion180", "platform", "web-api");
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api");
 
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";

@@ -39,7 +39,7 @@ public sealed class TargetingSettings
         Policy = policy ?? UpdatePolicy.Default;
     }
 
-    /// <summary>Package-id globs to target, e.g. <c>Orion180.*</c>.</summary>
+    /// <summary>Package-id globs to target, e.g. <c>Contoso.*</c>.</summary>
     public IReadOnlyList<string> Patterns { get; }
 
     /// <summary>Package-id globs to exclude from the matched set.</summary>

@@ -14,13 +14,13 @@ namespace AutoRemediator.Infrastructure.Tests;
 
 public class RemediationRunnerTests
 {
-    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "orion180", "platform", "web-api");
+    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
 
     private static RemediationRunRequested Request => new(
         Guid.NewGuid(), Repo.Id, Repo.Organization, Repo.Project, Repo.Name, DateTimeOffset.UtcNow);
 
     private static RepositoryUpdatePlan SinglePlan => new(
-        [new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")],
+        [new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")],
         [new ChangedManifest("/Directory.Packages.props", "<Project/>")]);
 
     [Fact]
@@ -72,7 +72,7 @@ public class RemediationRunnerTests
         Assert.Equal(RunStatus.VerificationFailed, store.Last?.Status);
 
         // The attempted updates and diagnostics are kept for diagnosis.
-        Assert.Equal("Orion180.Core", Assert.Single(run.Updates).PackageId);
+        Assert.Equal("Contoso.Core", Assert.Single(run.Updates).PackageId);
         Assert.Equal("CS0117", run.Verification?.Diagnostics.Single().Code);
         Assert.Equal("runs/abc/verification.log", run.Verification?.LogReference);
     }
@@ -152,7 +152,7 @@ public class RemediationRunnerTests
 
     private static VerificationOutcome RestoreConflict =>
         VerificationOutcome.DependencyFailure(
-            [new VerificationDiagnostic("NU1107", "Version conflict detected for Orion180.Common")]);
+            [new VerificationDiagnostic("NU1107", "Version conflict detected for Contoso.Common")]);
 
     [Fact]
     public async Task A_compile_break_repaired_on_the_second_attempt_is_held_for_review_not_pushed()
@@ -410,8 +410,8 @@ public class RemediationRunnerTests
     {
         var plan = new RepositoryUpdatePlan(
             [
-                new DependencyUpdate("Orion180.Core", "1.4.0", "1.5.0", UpdateKind.Matched),
-                new DependencyUpdate("Orion180.Common", "1.4.0", "2.0.0", UpdateKind.Collateral, BeyondPolicy: true),
+                new DependencyUpdate("Contoso.Core", "1.4.0", "1.5.0", UpdateKind.Matched),
+                new DependencyUpdate("Contoso.Common", "1.4.0", "2.0.0", UpdateKind.Collateral, BeyondPolicy: true),
             ],
             [new ChangedManifest("/Directory.Packages.props", "<Project/>")]);
         var ado = new FakeAdo();
@@ -439,7 +439,7 @@ public class RemediationRunnerTests
     public async Task Failed_when_a_write_throws()
     {
         var plan = new RepositoryUpdatePlan(
-            [new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")],
+            [new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")],
             [new ChangedManifest("/Directory.Packages.props", "<Project/>")]);
         var ado = new FakeAdo { ThrowOnPush = true };
         var store = new RecordingRunStore();
@@ -555,7 +555,7 @@ public class RemediationRunnerTests
 
     private sealed class FakeSettingsStore : ITargetingSettingsStore
     {
-        public Task<TargetingSettings> GetAsync(CancellationToken ct = default) => Task.FromResult(new TargetingSettings(["Orion180.*"], feeds: ["https://feed"]));
+        public Task<TargetingSettings> GetAsync(CancellationToken ct = default) => Task.FromResult(new TargetingSettings(["Contoso.*"], feeds: ["https://feed"]));
         public Task SetAsync(TargetingSettings s, CancellationToken ct = default) => Task.CompletedTask;
     }
 

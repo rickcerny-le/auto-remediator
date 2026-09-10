@@ -18,11 +18,11 @@ The system SHALL parse `Directory.Packages.props` (Central Package Management `P
 - **THEN** each package id and its version are extracted, and a repository using both formats yields the union
 
 ### Requirement: Match packages against configured patterns
-The system SHALL select the packages to consider by matching package ids against the configured include patterns and removing those matching an exclude pattern, treating patterns as case-insensitive package-id globs (e.g. `Orion180.*`).
+The system SHALL select the packages to consider by matching package ids against the configured include patterns and removing those matching an exclude pattern, treating patterns as case-insensitive package-id globs (e.g. `Contoso.*`).
 
 #### Scenario: Wildcard selects the matching packages
-- **WHEN** the pattern `Orion180.*` is applied to a manifest containing `Orion180.Core`, `Orion180.Data`, and `Newtonsoft.Json`
-- **THEN** `Orion180.Core` and `Orion180.Data` are selected and `Newtonsoft.Json` is not
+- **WHEN** the pattern `Contoso.*` is applied to a manifest containing `Contoso.Core`, `Contoso.Data`, and `Newtonsoft.Json`
+- **THEN** `Contoso.Core` and `Contoso.Data` are selected and `Newtonsoft.Json` is not
 
 ### Requirement: Resolve target versions from the feed
 For each matched package, the system SHALL resolve the versions available from the configured feed and select the **target** version by applying the update policy (strategy relative to the current pin; pre-release excluded unless allowed), authenticating to the feed with the configured credential. The target is the highest version allowed by the strategy that is greater than the current version, or none when the package is already current under policy.

@@ -13,8 +13,8 @@ public class UpdatePlannerCollateralTests
 {
     private const string Manifest = """
         <Project><ItemGroup>
-          <PackageVersion Include="Orion180.Core" Version="1.4.0" />
-          <PackageVersion Include="Orion180.Common" Version="1.4.0" />
+          <PackageVersion Include="Contoso.Core" Version="1.4.0" />
+          <PackageVersion Include="Contoso.Common" Version="1.4.0" />
         </ItemGroup></Project>
         """;
 
@@ -26,15 +26,15 @@ public class UpdatePlannerCollateralTests
         [
             new AnalyzedManifest("/Directory.Packages.props", Manifest,
             [
-                new AnalyzedPackage("Orion180.Core", "1.4.0", "1.5.0", DependencyStatus.Outdated),
-                new AnalyzedPackage("Orion180.Common", "1.4.0", null, DependencyStatus.UpToDate),
+                new AnalyzedPackage("Contoso.Core", "1.4.0", "1.5.0", DependencyStatus.Outdated),
+                new AnalyzedPackage("Contoso.Common", "1.4.0", null, DependencyStatus.UpToDate),
             ]),
         ]);
         var deps = new Dictionary<string, IReadOnlyList<FamilyDependency>>
         {
-            ["Orion180.Core/1.5.0"] = [new FamilyDependency("Orion180.Common", VersionRange.Parse("[1.5.0, )"))],
+            ["Contoso.Core/1.5.0"] = [new FamilyDependency("Contoso.Common", VersionRange.Parse("[1.5.0, )"))],
         };
-        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Orion180.Common"] = ["1.4.0", "1.5.0"] };
+        var versions = new Dictionary<string, IReadOnlyList<string>> { ["Contoso.Common"] = ["1.4.0", "1.5.0"] };
 
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
@@ -49,21 +49,21 @@ public class UpdatePlannerCollateralTests
         builder.Services.AddSingleton<IFeedVersionResolver>(new FakeResolver(versions));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var repo = new ManagedRepository(Guid.NewGuid(), "orion180", "platform", "web-api");
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api");
         var plan = await provider.GetRequiredService<IUpdatePlanner>()
-            .PlanAsync(repo, new TargetingSettings(["Orion180.*"], feeds: ["https://feed"]), TestContext.Current.CancellationToken);
+            .PlanAsync(repo, new TargetingSettings(["Contoso.*"], feeds: ["https://feed"]), TestContext.Current.CancellationToken);
 
-        var core = Assert.Single(plan.Updates, u => u.PackageId == "Orion180.Core");
+        var core = Assert.Single(plan.Updates, u => u.PackageId == "Contoso.Core");
         Assert.Equal(UpdateKind.Matched, core.Kind);
         Assert.Equal("1.5.0", core.ToVersion);
 
-        var common = Assert.Single(plan.Updates, u => u.PackageId == "Orion180.Common");
+        var common = Assert.Single(plan.Updates, u => u.PackageId == "Contoso.Common");
         Assert.Equal(UpdateKind.Collateral, common.Kind);
         Assert.Equal("1.5.0", common.ToVersion);
 
         var changed = Assert.Single(plan.ChangedManifests);
-        Assert.Contains("""Include="Orion180.Core" Version="1.5.0" """, changed.NewContent);
-        Assert.Contains("""Include="Orion180.Common" Version="1.5.0" """, changed.NewContent);
+        Assert.Contains("""Include="Contoso.Core" Version="1.5.0" """, changed.NewContent);
+        Assert.Contains("""Include="Contoso.Common" Version="1.5.0" """, changed.NewContent);
     }
 
     private sealed class FakeAnalyzer(RepositoryAnalysis analysis) : IRepositoryAnalyzer

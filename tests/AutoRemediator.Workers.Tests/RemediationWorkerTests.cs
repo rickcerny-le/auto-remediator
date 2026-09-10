@@ -16,7 +16,7 @@ public class RemediationWorkerTests
         var request = new RemediationRunRequested(
             RunId: Guid.NewGuid(),
             RepositoryId: Guid.NewGuid(),
-            Organization: "orion180",
+            Organization: "contoso",
             Project: "platform",
             RepositoryName: "web-api",
             RequestedAtUtc: DateTimeOffset.UtcNow);
@@ -49,7 +49,7 @@ public class RemediationWorkerTests
         public Task<RemediationRun> RunAsync(RemediationRunRequested request, CancellationToken cancellationToken = default)
         {
             Received.Add(request);
-            var run = new RemediationRun(request.RunId, request.RepositoryId, "orion180/platform/web-api", DateTimeOffset.UtcNow);
+            var run = new RemediationRun(request.RunId, request.RepositoryId, "contoso/platform/web-api", DateTimeOffset.UtcNow);
             run.NoUpdates(DateTimeOffset.UtcNow);
             return Task.FromResult(run);
         }

@@ -29,7 +29,7 @@ Given a package's current version, the versions available on the feed, and a str
 The system SHALL treat the ignore list as package-ID globs. A matched package whose id matches any ignore glob SHALL be held: it is never selected for a target/update and is reported with an `Ignored` status.
 
 #### Scenario: Ignored package is held
-- **WHEN** `Orion180.Legacy.*` is in the ignore list and `Orion180.Legacy.Api` is matched and outdated
+- **WHEN** `Contoso.Legacy.*` is in the ignore list and `Contoso.Legacy.Api` is matched and outdated
 - **THEN** it is reported as `Ignored` and no target is selected for it
 
 #### Scenario: Non-ignored matched package is unaffected

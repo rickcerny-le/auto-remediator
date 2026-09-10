@@ -8,13 +8,13 @@ namespace AutoRemediator.Infrastructure.Tests;
 
 public class VerificationServiceTests
 {
-    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "orion180", "platform", "web-api");
+    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
     private static readonly Guid RunId = Guid.NewGuid();
 
-    private static TargetingSettings Settings => new(["Orion180.*"], feeds: ["https://feed/v3/index.json"]);
+    private static TargetingSettings Settings => new(["Contoso.*"], feeds: ["https://feed/v3/index.json"]);
 
     private static RepositoryUpdatePlan Plan => new(
-        [new DependencyUpdate("Orion180.Core", "1.4.0", "1.5.0")],
+        [new DependencyUpdate("Contoso.Core", "1.4.0", "1.5.0")],
         [new ChangedManifest("/Directory.Packages.props", "<Project />")]);
 
     private static async Task<(VerificationResult Result, FakeCli Cli, FakeLogStore Logs)> VerifyAsync(
@@ -98,7 +98,7 @@ public class VerificationServiceTests
     public async Task Failed_restore_short_circuits_before_build()
     {
         var cli = FakeCli.RestoreFails("""
-            error NU1107: Version conflict detected for Orion180.Common. Install/reference Orion180.Common 2.0.0 directly.
+            error NU1107: Version conflict detected for Contoso.Common. Install/reference Contoso.Common 2.0.0 directly.
             """);
 
         var (result, invoked, _) = await VerifyAsync(cli);
@@ -115,14 +115,14 @@ public class VerificationServiceTests
         // MSBuild's project-level form: no (line,col). This is how NuGet reports most restore
         // errors, so failing to parse it would misclassify them as environmental.
         var cli = FakeCli.RestoreFails(
-            @"C:\work\src\App\App.csproj : error NU1101: Unable to find package Orion180.Nope. No packages exist with this id.");
+            @"C:\work\src\App\App.csproj : error NU1101: Unable to find package Contoso.Nope. No packages exist with this id.");
 
         var (result, _, _) = await VerifyAsync(cli);
 
         Assert.Equal(VerificationClassification.DependencyFailure, result.Outcome.Classification);
         var diagnostic = result.Outcome.Diagnostics.Single();
         Assert.Equal("NU1101", diagnostic.Code);
-        Assert.Contains("Orion180.Nope", diagnostic.Message);
+        Assert.Contains("Contoso.Nope", diagnostic.Message);
         Assert.Null(diagnostic.Line);
         Assert.EndsWith("App.csproj", diagnostic.Path);
     }
@@ -131,7 +131,7 @@ public class VerificationServiceTests
     public async Task Downgrade_error_is_a_dependency_failure()
     {
         var cli = FakeCli.RestoreFails("""
-            error NU1605: Warning As Error: Detected package downgrade: Orion180.Common from 2.0.0 to 1.4.0.
+            error NU1605: Warning As Error: Detected package downgrade: Contoso.Common from 2.0.0 to 1.4.0.
             """);
 
         var (result, _, _) = await VerifyAsync(cli);
@@ -263,12 +263,12 @@ public class VerificationServiceTests
     public async Task A_failed_build_log_includes_the_preceding_restore_output()
     {
         var cli = FakeCli.BuildFails(_ => "error CS0117: 'Client' has no member 'SubmitAsync'");
-        cli.RestoreOutput = "Restored Orion180.Core 1.5.0";
+        cli.RestoreOutput = "Restored Contoso.Core 1.5.0";
 
         var (_, _, logs) = await VerifyAsync(cli);
 
         var log = logs.Stored.Values.Single();
-        Assert.Contains("Restored Orion180.Core 1.5.0", log);
+        Assert.Contains("Restored Contoso.Core 1.5.0", log);
         Assert.Contains("CS0117", log);
     }
 

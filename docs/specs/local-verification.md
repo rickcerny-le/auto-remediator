@@ -185,7 +185,7 @@ A bounded number of distinct diagnostics SHALL be persisted on the run record, a
 - **THEN** a diagnostic is recorded with code `CS0117`, the message, the repository-relative path `src/Foo/Bar.cs`, line 42, and column 17
 
 #### Scenario: A project-level restore diagnostic is structured
-- **WHEN** restore emits `src/App/App.csproj : error NU1101: Unable to find package Orion180.Nope.`
+- **WHEN** restore emits `src/App/App.csproj : error NU1101: Unable to find package Contoso.Nope.`
 - **THEN** a diagnostic is recorded with code `NU1101`, the message, and the project path, with no line or column
 
 #### Scenario: A failed build's log includes the preceding restore output

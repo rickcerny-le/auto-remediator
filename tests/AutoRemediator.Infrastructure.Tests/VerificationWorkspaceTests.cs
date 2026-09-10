@@ -10,9 +10,9 @@ namespace AutoRemediator.Infrastructure.Tests;
 
 public class VerificationWorkspaceTests
 {
-    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "orion180", "platform", "web-api");
+    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
 
-    private static TargetingSettings Settings => new(["Orion180.*"], feeds: ["https://feed/v3/index.json"]);
+    private static TargetingSettings Settings => new(["Contoso.*"], feeds: ["https://feed/v3/index.json"]);
 
     private static VerificationWorkspaceFactory Factory(Func<Stream> archive, string? pat = "secret-pat") =>
         new(new ArchiveAdo(archive),
@@ -88,8 +88,8 @@ public class VerificationWorkspaceTests
     public async Task Applies_the_computed_edits_over_the_extracted_manifests()
     {
         using var workspace = await CreateAsync(
-            () => TestArchive.Of(("Directory.Packages.props", "<Project><PackageVersion Include=\"Orion180.Core\" Version=\"1.0.0\" /></Project>")),
-            [new ChangedManifest("/Directory.Packages.props", "<Project><PackageVersion Include=\"Orion180.Core\" Version=\"2.0.0\" /></Project>")]);
+            () => TestArchive.Of(("Directory.Packages.props", "<Project><PackageVersion Include=\"Contoso.Core\" Version=\"1.0.0\" /></Project>")),
+            [new ChangedManifest("/Directory.Packages.props", "<Project><PackageVersion Include=\"Contoso.Core\" Version=\"2.0.0\" /></Project>")]);
 
         var content = await workspace.ReadAsync("Directory.Packages.props", TestContext.Current.CancellationToken);
         Assert.Contains("2.0.0", content);
@@ -156,11 +156,11 @@ public class VerificationWorkspaceTests
     {
         using var workspace = await CreateAsync(() => TestArchive.Of(
             ("Directory.Packages.props", "<Project />"),
-            ("src/Web/packages.lock.json", """{ "version": 1, "dependencies": { "Orion180.Core": "1.0.0" } }""")));
+            ("src/Web/packages.lock.json", """{ "version": 1, "dependencies": { "Contoso.Core": "1.0.0" } }""")));
 
         // Stand in for restore rewriting the lock file.
         var lockPath = Path.Combine(workspace.Root, "src", "Web", "packages.lock.json");
-        await File.WriteAllTextAsync(lockPath, """{ "version": 1, "dependencies": { "Orion180.Core": "2.0.0" } }""",
+        await File.WriteAllTextAsync(lockPath, """{ "version": 1, "dependencies": { "Contoso.Core": "2.0.0" } }""",
             TestContext.Current.CancellationToken);
 
         var changes = await workspace.LockFileChangesAsync(TestContext.Current.CancellationToken);

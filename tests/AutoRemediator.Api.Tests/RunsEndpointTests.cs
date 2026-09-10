@@ -45,33 +45,33 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
             [TranscriptReference] = TranscriptContent,
         };
 
-        var completed = new RemediationRun(CompletedRunId, Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow.AddMinutes(-5));
+        var completed = new RemediationRun(CompletedRunId, Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow.AddMinutes(-5));
         completed.Verified(VerificationOutcome.Verified(LogReference));
-        completed.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/1", DateTimeOffset.UtcNow);
+        completed.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/1", DateTimeOffset.UtcNow);
 
-        var failed = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/worker", DateTimeOffset.UtcNow);
+        var failed = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/worker", DateTimeOffset.UtcNow);
         failed.Failed("boom", DateTimeOffset.UtcNow);
 
-        var rejected = new RemediationRun(RejectedRunId, Guid.NewGuid(), "orion180/platform/api", DateTimeOffset.UtcNow);
+        var rejected = new RemediationRun(RejectedRunId, Guid.NewGuid(), "contoso/platform/api", DateTimeOffset.UtcNow);
         rejected.VerificationFailed(
-            [new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")],
+            [new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")],
             VerificationOutcome.DependencyFailure(
                 [new VerificationDiagnostic("CS0117", "'Client' has no member 'SubmitAsync'", "src/Foo/Bar.cs", 42, 17)],
                 LogReference),
             DateTimeOffset.UtcNow);
 
-        var skipped = new RemediationRun(SkippedRunId, Guid.NewGuid(), "orion180/platform/jobs", DateTimeOffset.UtcNow);
+        var skipped = new RemediationRun(SkippedRunId, Guid.NewGuid(), "contoso/platform/jobs", DateTimeOffset.UtcNow);
         skipped.Verified(VerificationOutcome.Skipped("the configured feed was unreachable"));
-        skipped.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/2", DateTimeOffset.UtcNow);
+        skipped.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/2", DateTimeOffset.UtcNow);
 
-        var repaired = new RemediationRun(RepairedRunId, Guid.NewGuid(), "orion180/platform/gateway", DateTimeOffset.UtcNow);
+        var repaired = new RemediationRun(RepairedRunId, Guid.NewGuid(), "contoso/platform/gateway", DateTimeOffset.UtcNow);
         repaired.Verified(VerificationOutcome.Verified(LogReference));
         repaired.Remediated(attempts: 2, transcriptReference: TranscriptReference);
-        repaired.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/5", DateTimeOffset.UtcNow);
+        repaired.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/5", DateTimeOffset.UtcNow);
 
         var verifiedAt = new DateTimeOffset(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
-        var awaitingReview = new RemediationRun(AwaitingReviewRunId, AwaitingReviewRepositoryId, "orion180/platform/checkout", DateTimeOffset.UtcNow.AddMinutes(-10));
-        awaitingReview.RecordUpdates([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")]);
+        var awaitingReview = new RemediationRun(AwaitingReviewRunId, AwaitingReviewRepositoryId, "contoso/platform/checkout", DateTimeOffset.UtcNow.AddMinutes(-10));
+        awaitingReview.RecordUpdates([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")]);
         awaitingReview.Advance(RunStatus.Remediating);
         awaitingReview.Remediated(attempts: 2, transcriptReference: TranscriptReference);
         awaitingReview.AwaitingReview(ProposalReference, verifiedAt);
@@ -183,7 +183,7 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         var held = Assert.Single(runs!);
         Assert.Equal(AwaitingReviewRunId, held.Id);
-        Assert.Equal("orion180/platform/checkout", held.RepositorySlug);
+        Assert.Equal("contoso/platform/checkout", held.RepositorySlug);
     }
 
     [Fact]
@@ -202,7 +202,7 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         Assert.NotNull(run);
         Assert.Equal("https://dev.azure.com/pr/1", run.PullRequestUrl);
-        Assert.Equal("Orion180.Core", Assert.Single(run.Updates).PackageId);
+        Assert.Equal("Contoso.Core", Assert.Single(run.Updates).PackageId);
     }
 
     [Fact]

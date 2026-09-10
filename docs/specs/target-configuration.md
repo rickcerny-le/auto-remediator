@@ -18,10 +18,10 @@ The system SHALL persist an explicit list of managed repositories, each identifi
 - **THEN** it is retained in configuration but excluded from analysis and run enqueue
 
 ### Requirement: Global targeting settings
-The system SHALL persist global targeting settings: one or more package **patterns** (package-ID globs such as `Orion180.*`), optional **exclude** patterns, one or more package **feeds** used to resolve latest versions, and an update **policy** (at minimum an update strategy and an ignore list). Settings SHALL be editable via the API.
+The system SHALL persist global targeting settings: one or more package **patterns** (package-ID globs such as `Contoso.*`), optional **exclude** patterns, one or more package **feeds** used to resolve latest versions, and an update **policy** (at minimum an update strategy and an ignore list). Settings SHALL be editable via the API.
 
 #### Scenario: Configure a package pattern
-- **WHEN** the pattern `Orion180.*` is added to targeting settings
+- **WHEN** the pattern `Contoso.*` is added to targeting settings
 - **THEN** it is persisted and used by analysis to select matching packages
 
 #### Scenario: Excludes narrow the matched set

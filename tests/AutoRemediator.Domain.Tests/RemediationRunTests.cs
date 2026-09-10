@@ -11,7 +11,7 @@ public class RemediationRunTests
         new(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", Started);
 
     private static DependencyUpdate[] Updates() =>
-        [new DependencyUpdate("Orion180.Core", "1.4.0", "1.5.0")];
+        [new DependencyUpdate("Contoso.Core", "1.4.0", "1.5.0")];
 
     [Fact]
     public void New_run_starts_in_Reading_without_a_verification_outcome()

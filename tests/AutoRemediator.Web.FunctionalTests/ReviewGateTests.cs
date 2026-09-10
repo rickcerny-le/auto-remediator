@@ -49,8 +49,8 @@ public class ReviewGateTests
         var proposalStore = provider.GetRequiredService<IChangeProposalStore>();
 
         var repositoryId = Guid.NewGuid();
-        var run = new RemediationRun(Guid.NewGuid(), repositoryId, "orion180/platform/review-gate-e2e", DateTimeOffset.UtcNow.AddMinutes(-15));
-        run.RecordUpdates([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")]);
+        var run = new RemediationRun(Guid.NewGuid(), repositoryId, "contoso/platform/review-gate-e2e", DateTimeOffset.UtcNow.AddMinutes(-15));
+        run.RecordUpdates([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")]);
         run.Advance(RunStatus.Remediating);
 
         var proposal = NewProposal(run.Id, repositoryId);

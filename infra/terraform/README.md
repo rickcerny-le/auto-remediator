@@ -112,7 +112,7 @@ az keyvault secret set \
 > remediation worker to push the `autoremediator/dependency-updates` branch and open
 > PRs (Slice 2), plus **Packaging (Read)** to resolve feed versions.
 
-Also set `AzureDevOps:OrganizationUrl` (e.g. `https://dev.azure.com/Orion180`) as an app
+Also set `AzureDevOps:OrganizationUrl` (e.g. `https://dev.azure.com/Contoso`) as an app
 setting (or a `AzureDevOps--OrganizationUrl` Key Vault secret). Locally, supply both via
 user-secrets instead of Key Vault.
 

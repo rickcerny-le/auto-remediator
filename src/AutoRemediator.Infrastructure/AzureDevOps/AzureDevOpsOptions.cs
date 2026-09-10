@@ -9,7 +9,7 @@ public sealed class AzureDevOpsOptions
 {
     public const string SectionName = "AzureDevOps";
 
-    /// <summary>Organization base URL, e.g. https://dev.azure.com/Orion180.</summary>
+    /// <summary>Organization base URL, e.g. https://dev.azure.com/Contoso.</summary>
     public string? OrganizationUrl { get; set; }
 
     /// <summary>Personal access token (Code: Read &amp; Write, plus pull-request contribution — approval pushes a branch and opens a pull request).</summary>

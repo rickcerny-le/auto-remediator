@@ -7,10 +7,10 @@ namespace AutoRemediator.Infrastructure.Tests;
 
 public class AzureDevOpsClientTests
 {
-    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "orion180", "platform", "web-api");
+    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
 
     private static AzureDevOpsClient Client(StubHandler handler) =>
-        new(new HttpClient(handler) { BaseAddress = new Uri("https://dev.azure.com/orion180/") });
+        new(new HttpClient(handler) { BaseAddress = new Uri("https://dev.azure.com/contoso/") });
 
     [Fact]
     public async Task GetBranchHead_returns_object_id()

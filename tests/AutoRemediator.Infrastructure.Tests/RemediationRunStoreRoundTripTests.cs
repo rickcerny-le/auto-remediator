@@ -41,8 +41,8 @@ public class RemediationRunStoreRoundTripTests
 
         var store = provider.GetRequiredService<IRemediationRunStore>();
         var repoId = Guid.NewGuid();
-        var run = new RemediationRun(Guid.NewGuid(), repoId, "orion180/platform/web-api", DateTimeOffset.UtcNow);
-        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/1", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), repoId, "contoso/platform/web-api", DateTimeOffset.UtcNow);
+        run.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://pr/1", DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
         {
@@ -53,7 +53,7 @@ public class RemediationRunStoreRoundTripTests
         var saved = Assert.Single(runs);
         Assert.Equal(RunStatus.Completed, saved.Status);
         Assert.Equal("https://pr/1", saved.PullRequestUrl);
-        Assert.Equal("Orion180.Core", Assert.Single(saved.Updates).PackageId);
+        Assert.Equal("Contoso.Core", Assert.Single(saved.Updates).PackageId);
 
         // Global list and by-id lookup (used by the runs UI).
         Assert.Contains(await store.ListAllAsync(ct), r => r.Id == run.Id);
@@ -69,9 +69,9 @@ public class RemediationRunStoreRoundTripTests
         await using var provider = BuildProvider();
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
         run.Verified(VerificationOutcome.Verified("runs/abc/verify.log"));
-        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/1", DateTimeOffset.UtcNow);
+        run.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://pr/1", DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
         {
@@ -96,13 +96,13 @@ public class RemediationRunStoreRoundTripTests
 
         var outcome = VerificationOutcome.DependencyFailure(
             [
-                new VerificationDiagnostic("NU1107", "Version conflict detected for Orion180.Common"),
+                new VerificationDiagnostic("NU1107", "Version conflict detected for Contoso.Common"),
                 new VerificationDiagnostic("CS0117", "'Client' has no member 'SubmitAsync'", "src/Foo/Bar.cs", 42, 17),
             ],
             "runs/abc/build.log");
 
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
-        run.VerificationFailed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], outcome, DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
+        run.VerificationFailed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], outcome, DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
         {
@@ -133,9 +133,9 @@ public class RemediationRunStoreRoundTripTests
         await using var provider = BuildProvider();
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
         run.Verified(VerificationOutcome.Skipped("the configured feed was unreachable", "runs/abc/restore.log"));
-        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/2", DateTimeOffset.UtcNow);
+        run.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://pr/2", DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
         {
@@ -157,10 +157,10 @@ public class RemediationRunStoreRoundTripTests
         await using var provider = BuildProvider();
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
         run.Verified(VerificationOutcome.Verified("runs/abc/verify.log"));
         run.Remediated(attempts: 2, transcriptReference: "runs/abc/transcript.log");
-        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/3", DateTimeOffset.UtcNow);
+        run.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://pr/3", DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
         {
@@ -180,9 +180,9 @@ public class RemediationRunStoreRoundTripTests
         await using var provider = BuildProvider();
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
         run.Verified(VerificationOutcome.Verified());
-        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/4", DateTimeOffset.UtcNow);
+        run.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://pr/4", DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
         {
@@ -202,7 +202,7 @@ public class RemediationRunStoreRoundTripTests
         await using var provider = BuildProvider();
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
         run.NoUpdates(DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
@@ -225,7 +225,7 @@ public class RemediationRunStoreRoundTripTests
         await using var provider = BuildProvider();
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
         run.Advance(RunStatus.Remediating);
         run.AwaitingReview($"{run.Id}/proposal.json", DateTimeOffset.UtcNow);
         run.ReviewBlocked("the update branch moved");
@@ -252,8 +252,8 @@ public class RemediationRunStoreRoundTripTests
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
         // Simulates a pre-existing row: completed, with none of the review columns ever written.
-        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "orion180/platform/web-api", DateTimeOffset.UtcNow);
-        run.Completed([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], "https://pr/5", DateTimeOffset.UtcNow);
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow);
+        run.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://pr/5", DateTimeOffset.UtcNow);
 
         if (!await TrySaveAsync(store, run, ct))
         {
@@ -275,7 +275,7 @@ public class RemediationRunStoreRoundTripTests
         var store = provider.GetRequiredService<IRemediationRunStore>();
 
         var repoId = Guid.NewGuid();
-        var held = new RemediationRun(Guid.NewGuid(), repoId, "orion180/platform/web-api", DateTimeOffset.UtcNow);
+        var held = new RemediationRun(Guid.NewGuid(), repoId, "contoso/platform/web-api", DateTimeOffset.UtcNow);
         held.Advance(RunStatus.Remediating);
         held.AwaitingReview($"{held.Id}/proposal.json", DateTimeOffset.UtcNow);
 

@@ -10,15 +10,15 @@ Defines how the system reads intra-family dependencies from the feed and compute
 For a package at a specific version, the system SHALL read its declared dependencies from the feed and retain those whose ids match the configured include patterns (the family), together with each dependency's version range. Dependencies SHALL be considered across the package's target-framework groups (a dependency required by any group counts). No local clone or build is performed.
 
 #### Scenario: Family dependencies are extracted
-- **WHEN** `Orion180.Core 1.5.0`'s feed metadata declares dependencies on `Orion180.Common [1.5.0, )` and `Newtonsoft.Json [13.0.0, )`
-- **THEN** only `Orion180.Common [1.5.0, )` is returned (matched by the family patterns); `Newtonsoft.Json` is not
+- **WHEN** `Contoso.Core 1.5.0`'s feed metadata declares dependencies on `Contoso.Common [1.5.0, )` and `Newtonsoft.Json [13.0.0, )`
+- **THEN** only `Contoso.Common [1.5.0, )` is returned (matched by the family patterns); `Newtonsoft.Json` is not
 
 ### Requirement: Compute minimal collateral bumps over the declared family
 Starting from each matched, manifest-declared package's chosen version (its policy target when being bumped, otherwise its current pin), the system SHALL verify that every intra-family dependency range is satisfied by the chosen version of the depended-on package. When a range is unsatisfied and the depended-on package is declared in the manifests, the system SHALL raise that package's chosen version to the lowest available version satisfying the range (a collateral bump). The process SHALL iterate until no further bumps are needed or a bounded iteration limit is reached. Only declared packages are bumped; undeclared (transitive) dependencies are left to NuGet.
 
 #### Scenario: A collateral bump is added when required
-- **WHEN** the primary plan bumps `Orion180.Core` to `1.5.0`, `Orion180.Core 1.5.0` requires `Orion180.Common ≥ 1.5.0`, and the repo pins `Orion180.Common 1.4.0`
-- **THEN** the alignment adds a collateral bump of `Orion180.Common` to `1.5.0` (the lowest available version satisfying the range)
+- **WHEN** the primary plan bumps `Contoso.Core` to `1.5.0`, `Contoso.Core 1.5.0` requires `Contoso.Common ≥ 1.5.0`, and the repo pins `Contoso.Common 1.4.0`
+- **THEN** the alignment adds a collateral bump of `Contoso.Common` to `1.5.0` (the lowest available version satisfying the range)
 
 #### Scenario: No collateral when the set already resolves
 - **WHEN** every intra-family dependency range is already satisfied by the chosen versions
@@ -36,8 +36,8 @@ Starting from each matched, manifest-declared package's chosen version (its poli
 When the lowest version satisfying an intra-family range lies outside the update strategy band, the system SHALL still select it (correctness over policy) and SHALL mark that update as a policy escalation.
 
 #### Scenario: Escalation beyond the strategy band
-- **WHEN** the strategy is `Minor` but satisfying a dependency requires `Orion180.Common 2.0.0`
-- **THEN** `Orion180.Common` is bumped to `2.0.0` and the update is marked as beyond-policy
+- **WHEN** the strategy is `Minor` but satisfying a dependency requires `Contoso.Common 2.0.0`
+- **THEN** `Contoso.Common` is bumped to `2.0.0` and the update is marked as beyond-policy
 
 ### Requirement: Collateral bumps are surfaced
 Collateral bumps SHALL be distinguishable from primary (matched) bumps in the update set and run history, and the pull-request summary SHALL list collateral bumps and note any policy escalations.

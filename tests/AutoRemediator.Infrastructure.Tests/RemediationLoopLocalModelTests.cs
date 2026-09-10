@@ -27,9 +27,9 @@ public class RemediationLoopLocalModelTests(ITestOutputHelper output)
 {
     private const string ConnectionVariable = "AUTOREMEDIATOR_CHAT_CONNECTION";
 
-    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "orion180", "platform", "web-api");
+    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
 
-    private static TargetingSettings Settings => new(["Orion180.*"], feeds: []);
+    private static TargetingSettings Settings => new(["Contoso.*"], feeds: []);
 
     private const string Csproj = """
         <Project Sdk="Microsoft.NET.Sdk">

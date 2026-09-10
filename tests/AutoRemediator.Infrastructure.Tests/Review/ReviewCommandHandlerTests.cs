@@ -13,7 +13,7 @@ namespace AutoRemediator.Infrastructure.Tests.Review;
 
 public class ReviewCommandHandlerTests
 {
-    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "orion180", "platform", "web-api");
+    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
     private static readonly DateTimeOffset VerifiedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
 
     private static ProposedFile ManifestFile(string newContent = "<New/>") =>
@@ -31,7 +31,7 @@ public class ReviewCommandHandlerTests
     private static RemediationRun HeldRun(ChangeProposal proposal, out string reference)
     {
         var run = new RemediationRun(proposal.RunId, proposal.RepositoryId, Repo.Slug, DateTimeOffset.UtcNow.AddMinutes(-5));
-        run.RecordUpdates([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")]);
+        run.RecordUpdates([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")]);
         run.Advance(RunStatus.Remediating);
         reference = $"{proposal.RunId}/proposal.json";
         run.AwaitingReview(reference, VerifiedAt);
@@ -508,7 +508,7 @@ public class ReviewCommandHandlerTests
 
     private sealed class FakeSettingsStore : ITargetingSettingsStore
     {
-        public Task<TargetingSettings> GetAsync(CancellationToken ct = default) => Task.FromResult(new TargetingSettings(["Orion180.*"], feeds: ["https://feed"]));
+        public Task<TargetingSettings> GetAsync(CancellationToken ct = default) => Task.FromResult(new TargetingSettings(["Contoso.*"], feeds: ["https://feed"]));
         public Task SetAsync(TargetingSettings s, CancellationToken ct = default) => Task.CompletedTask;
     }
 

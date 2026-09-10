@@ -16,10 +16,10 @@ namespace AutoRemediator.Infrastructure.Tests;
 /// </summary>
 public class VerificationEndToEndTests
 {
-    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "orion180", "platform", "web-api");
+    private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
 
     /// <summary>No feeds: restore resolves nothing, so these tests never touch the network.</summary>
-    private static TargetingSettings Settings => new(["Orion180.*"], feeds: []);
+    private static TargetingSettings Settings => new(["Contoso.*"], feeds: []);
 
     private const string Csproj = """
         <Project Sdk="Microsoft.NET.Sdk">
@@ -60,7 +60,7 @@ public class VerificationEndToEndTests
             Guid.NewGuid(),
             Repo,
             "commit-abc",
-            new RepositoryUpdatePlan([new DependencyUpdate("Orion180.Core", "1.0.0", "2.0.0")], edits ?? []),
+            new RepositoryUpdatePlan([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], edits ?? []),
             Settings,
             TestContext.Current.CancellationToken);
 
@@ -131,7 +131,7 @@ public class VerificationEndToEndTests
                 <TargetFramework>net10.0</TargetFramework>
               </PropertyGroup>
               <ItemGroup>
-                <PackageReference Include="Orion180.DefinitelyNotReal" Version="9.9.9" />
+                <PackageReference Include="Contoso.DefinitelyNotReal" Version="9.9.9" />
               </ItemGroup>
             </Project>
             """;
