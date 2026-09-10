@@ -1,12 +1,9 @@
 # AutoRemediator — Product Requirements Document
 
-> **Provenance:** synthesized from the capability specs in [`docs/specs/`](specs/) and
-> [`ROADMAP.md`](../ROADMAP.md), which are the durable, present-tense record of what is
-> actually built (per the project constitution). This document reorganizes that material
-> into PRD form and calls out where a spec is silent so gaps can be filled deliberately
-> rather than discovered in production. Where this document and a capability spec
-> disagree on behavior, **the spec wins** — file an issue and reconcile them; this PRD is
-> a synthesis, not a new source of truth.
+> **Snapshot note:** this document was originally synthesized from a set of capability
+> specs that have since been retired. It stands on its own now as a point-in-time PRD —
+> treat it as a starting point to revise, not a live source of truth generated from
+> elsewhere in the repo.
 
 ## 1. Problem statement
 
@@ -33,7 +30,7 @@ before it ever reaches the repository.
 - Make every run fully observable after the fact: status, diffs, diagnostics, logs, and (when
   applicable) the AI transcript.
 
-## 3. Non-goals (decided, per ROADMAP.md and the specs)
+## 3. Non-goals (decided, per ROADMAP.md)
 
 - **No organization crawl / repository discovery.** Repositories are an explicit allowlist;
   AutoRemediator never discovers new repos on its own.
@@ -85,37 +82,31 @@ Every run reaches exactly one terminal-or-held status: `Completed`, `AwaitingRev
 
 ## 6. Functional requirements
 
-Each subsection is a capability with its own detailed spec (requirements + Gherkin scenarios) in
-`docs/specs/`; this section is a condensed index of *what* each one guarantees, not a
-restatement of the full requirement text.
+Each subsection below is a capability area; this section is a condensed index of *what* each
+one guarantees, distilled from specs that have since been retired.
 
 ### 6.1 Configuration & targeting
-*Spec: [target-configuration](specs/target-configuration.md)*
 - Persists an explicit, enable/disable-able list of managed repositories (org/project/name +
   target branch) and global targeting settings (package patterns, excludes, feeds, policy) in
   Table Storage, editable via API and a Blazor page.
 
 ### 6.2 Azure DevOps connectivity
-*Spec: [azure-devops-connectivity](specs/azure-devops-connectivity.md)*
 - One authenticated client (PAT from Key Vault in Azure, user-secrets locally) handles reads
   (manifest discovery/content, repo verification, full-tree-as-zip download) and writes (push to
   branch, create-or-find PR) entirely over REST — no `git` clone anywhere in the system.
 
 ### 6.3 Dependency analysis
-*Spec: [dependency-analysis](specs/dependency-analysis.md)*
 - Parses `Directory.Packages.props` and `*.csproj`, matches package ids against configured
   include/exclude globs, resolves each match's status (`Outdated` / `UpToDate` / `Ignored` /
   `Unknown`) against the **policy target** (not the absolute latest), and exposes the result as a
   read-only dependency map in the UI.
 
 ### 6.4 Update policy
-*Spec: [update-policy](specs/update-policy.md)*
 - Per-scope strategy (`Patch`/`Minor`/`Major`) selects the highest available version within that
   band relative to the current pin; an ignore-glob list holds matched packages; pre-release
   versions are excluded unless explicitly allowed.
 
 ### 6.5 Dependency graph alignment (collateral bumps)
-*Spec: [dependency-graph-alignment](specs/dependency-graph-alignment.md)*
 - Reads intra-family dependency ranges from feed metadata (no clone/build) and raises declared
   sibling packages just enough to satisfy those ranges, escalating beyond policy only when
   correctness requires it, iterating to a fixpoint. Only declared packages are touched; undeclared
@@ -123,14 +114,12 @@ restatement of the full requirement text.
   distinctly in the update set and the PR summary.
 
 ### 6.6 Update execution
-*Spec: [update-execution](specs/update-execution.md)*
 - Computes the update set (primary + collateral), edits manifest text in place (and carries a
   regenerated `packages.lock.json` when the repo commits one), and defers to local verification
   before anything is pushed. The repository's own CI remains the correctness authority; local
   verification never runs tests.
 
 ### 6.7 Local verification
-*Spec: [local-verification](specs/local-verification.md)*
 - Downloads the repo tree as a zip (no clone), applies the computed edits, resolves the build
   target (shallowest solution, else every project), runs gated `restore` → `build` with timeouts,
   and classifies the outcome as **Verified** / **DependencyFailure** / **Skipped** — defaulting to
@@ -139,7 +128,6 @@ restatement of the full requirement text.
   as run artifacts; the temp workspace is always deleted, on every exit path.
 
 ### 6.8 AI remediation loop
-*Spec: [ai-remediation-loop](specs/ai-remediation-loop.md)*
 - Invoked only on `CS`-coded (compile) diagnostics — never on restore-time (`NU`) conflicts, which
   are version math the agent can't fix. Runs a bounded attempt loop (max attempts, token budget,
   per-attempt timeout) over one accumulating working tree; proposed edits are constrained to
@@ -148,7 +136,6 @@ restatement of the full requirement text.
   bounds is guaranteed no worse than never having tried.
 
 ### 6.9 Change review gate
-*Spec: [change-review-gate](specs/change-review-gate.md)*
 - An AI-repaired change that verifies is **held** (`AwaitingReview`) instead of pushed
   automatically; a mechanical (non-AI) bump is unaffected and pushes immediately as before. The
   stored proposal carries everything a review needs (before/after content, diagnostics, attempt
@@ -161,7 +148,6 @@ restatement of the full requirement text.
   the worker, never in the API — the API only enqueues.
 
 ### 6.10 Pull request authoring
-*Spec: [pull-request-authoring](specs/pull-request-authoring.md)*
 - Pushes to a deterministic per-repo branch (`autoremediator/dependency-updates`), reuses a single
   active PR rather than duplicating, and states in the PR description: the package summary,
   whether verification passed or was skipped (and why), AI-authorship + attempt count + transcript
@@ -169,25 +155,21 @@ restatement of the full requirement text.
   historical fact. No PR is opened when the update set is empty.
 
 ### 6.11 Run orchestration
-*Spec: [run-orchestration](specs/run-orchestration.md)*
 - The state machine (§5) persists every run to Table Storage with a stable idempotency guarantee
   (one message → one run → the existing branch/PR is reused, never duplicated), and skips
   enqueueing a repository that's currently held for review.
 
 ### 6.12 Run observability UI
-*Spec: [run-observability-ui](specs/run-observability-ui.md)*
 - API + Web pages for a runs feed (filterable by status) and a run detail view: updates table,
   PR link, verification outcome with diagnostics and a log link, and — when applicable — AI
   attempt count and transcript link. A verification rejection is visually distinct from an
   unexpected tool failure.
 
 ### 6.13 Web UI foundation
-*Spec: [web-ui-foundation](specs/web-ui-foundation.md)*
 - MudBlazor design system, a dark-default GitHub-esque app shell with a light toggle, consistent
   styling across Home / Configuration / Dependency Map / Runs.
 
 ### 6.14 Platform: service orchestration
-*Spec: [service-orchestration](specs/service-orchestration.md)*
 - A .NET Aspire AppHost composes every service; Storage/Service Bus run as local emulators; a
   local model resource lets the AI loop be exercised with zero cloud dependency. The remediation
   worker treats the model as a **soft** dependency — an unavailable model costs only repair
@@ -196,7 +178,6 @@ restatement of the full requirement text.
   queue-scaled ACA Job).
 
 ### 6.15 Platform: solution scaffold & testing
-*Specs: [solution-scaffold](specs/solution-scaffold.md), [testing-foundation](specs/testing-foundation.md)*
 - Inward-flowing project references (`Domain`/`Contracts` depend on nothing but `Shared`; no
   library depends on a host); vertical-slice API organization; MAF isolated in `Agents` with its
   contract owned by `Domain` so `Infrastructure` and `Agents` never reference each other. xUnit v3
@@ -204,7 +185,6 @@ restatement of the full requirement text.
   test.
 
 ### 6.16 Platform: security & identity
-*Spec: [managed-identity-auth](specs/managed-identity-auth.md)*
 - Azure Storage/Service Bus clients resolve dual-mode from `ConnectionStrings:*` — an
   endpoint+`DefaultAzureCredential` (pinned to a user-assigned identity via `AZURE_CLIENT_ID`) in
   Azure, a connection string against local emulators otherwise — with a health check per resource
@@ -212,7 +192,6 @@ restatement of the full requirement text.
   emulator path).
 
 ### 6.17 Infrastructure
-*Specs: [terraform-iac](specs/terraform-iac.md), [azure-test-environment](specs/azure-test-environment.md), [container-images](specs/container-images.md)*
 - Modular Terraform (`modules/` reused by `environments/<env>/`), pinned versions, local state
   documented with a stated remote-backend migration path. The **test** environment: Consumption
   (scale-to-zero) Container Apps Environment, `api`/`web` as ingress Container Apps, `scheduler`
@@ -285,6 +264,5 @@ deliberately rather than assumed.
 
 ## 9. References
 
-- Capability specs: [`docs/specs/`](specs/) (source of truth for exact requirements/scenarios)
 - Product roadmap and slice sequencing: [`ROADMAP.md`](../ROADMAP.md)
 - Repo layout and local run instructions: [`README.md`](../README.md)
