@@ -1,9 +1,8 @@
 # AutoRemediator — Product Requirements Document
 
-> **Snapshot note:** this document was originally synthesized from a set of capability
-> specs that have since been retired. It stands on its own now as a point-in-time PRD —
-> treat it as a starting point to revise, not a live source of truth generated from
-> elsewhere in the repo.
+> **Living document.** Originally synthesized from retired capability specs, then revised in a
+> PRD-vs-code walkthrough on 2026-10-13. Requirements carry a **Status** line wherever the code
+> does not (yet) match; anything without one is implemented as described.
 
 ## 1. Problem statement
 
@@ -15,10 +14,16 @@ packages, bumps them, verifies the result builds, attempts an AI-assisted repair
 breaks compilation, and opens a pull request — holding any AI-authored change for a human decision
 before it ever reaches the repository.
 
+The pain is sharpest for developers who **author and consume their own packages** across a
+complex, multi-repository estate: every internal release fans out into update work in every
+consuming repository, and sibling packages in the family must move together. The same machinery
+also serves developers who simply want to **stay current** on the packages they depend on — a
+`*` pattern is a supported configuration — but internal package families are the design center.
+
 ## 2. Goals
 
 - Keep a configured, explicit set of Azure DevOps repositories current against a configured
-  package family, on a schedule, with no manual triage for the mechanical case.
+  package family, on a schedule or on demand, with no manual triage for the mechanical case.
 - Never leave a repository worse off than doing nothing: a change that can't be verified is
   never pushed, and an AI repair attempt that fails is indistinguishable in outcome from never
   having tried.
@@ -30,12 +35,26 @@ before it ever reaches the repository.
 - Make every run fully observable after the fact: status, diffs, diagnostics, logs, and (when
   applicable) the AI transcript.
 
-## 3. Non-goals (decided, per ROADMAP.md)
+**Current focus: production-faithful, run locally.** Everything is built to behave locally
+under Aspire exactly as it would deployed — same services, same queues/storage semantics, same
+auth model, same settings — so deployment later is a hosting decision, not a rework. *Where* and
+*how* it is deployed (pipeline, environments, IaC changes) is deliberately not being decided yet;
+existing Terraform is kept but not extended.
+
+## 3. Non-goals (decided)
 
 - **No organization crawl / repository discovery.** Repositories are an explicit allowlist;
   AutoRemediator never discovers new repos on its own.
-- **No general-purpose dependency bot.** Targeting is package-pattern-first (e.g. `Contoso.*`),
-  not "update everything."
+- **Not a vulnerability/security scanner.** Targeting is package-pattern-first (e.g.
+  `Contoso.*`). A `*` pattern is allowed for "stay current on everything," but nothing is
+  prioritized by advisories/CVEs, and features that only matter for public-ecosystem bots
+  (grouping heuristics, changelog scraping) are not a goal.
+- **Azure DevOps only (for now).** Repositories, pushes, and pull requests target Azure DevOps.
+  GitHub is a planned future platform (see [§9](#9-future-directions)), so new source-control
+  code should sit behind a provider seam rather than spreading ADO specifics further.
+- **The run ends at the pull request (for now).** AutoRemediator does not track the PR's CI
+  status, review, or merge after opening it. UI must not imply otherwise (e.g. an "Open PRs"
+  count that is really "runs that produced a PR").
 - **Not a substitute for the target repository's own CI.** Local verification is a fast,
   approximate signal (restore + build only — no tests, analyzers, or custom build targets); the
   repository's own Azure DevOps CI remains the authority on the resulting pull request.
@@ -47,16 +66,21 @@ before it ever reaches the repository.
 
 ## 4. Users
 
+- **Package author/platform developer** — owns an internal package family and wants every
+  consuming repository to keep up with each release without filing work for each one.
+- **Consuming developer** — wants their repositories kept current (internal family or `*`) with
+  minimal review effort.
 - **Operator** — the person who configures targeted repositories/patterns/policy, watches the
   Runs feed, and reviews/approves AI-repaired changes. Today this is any person who can reach the
-  Web app (see [§8, Gap: authentication](#8-known-gaps--open-questions)).
+  Web app (see [§8, Gap: authentication](#8-decisions--open-questions)).
 - **Downstream reviewer** — a repository maintainer who reviews the pull request AutoRemediator
   opens, informed by its verification/AI-authorship disclosure.
 
 ## 5. System overview
 
 ```
-  scheduler (cron) ─▶ for each enabled, non-held repo ─▶ enqueue RemediationRunRequested
+  scheduler (cron) ─▶ for each enabled, non-held repo ─┐
+  operator "Run now" (UI/API) ─▶ one repo ─────────────┴▶ enqueue RemediationRunRequested
                                                              │ (Service Bus → remediation job, KEDA)
                                                              ▼
    RUN:  Reading → Analyzing → Applying → Verifying → [Remediating] → Pushing → CreatingPR
@@ -130,10 +154,19 @@ one guarantees, distilled from specs that have since been retired.
 ### 6.8 AI remediation loop
 - Invoked only on `CS`-coded (compile) diagnostics — never on restore-time (`NU`) conflicts, which
   are version math the agent can't fix. Runs a bounded attempt loop (max attempts, token budget,
-  per-attempt timeout) over one accumulating working tree; proposed edits are constrained to
-  existing, non-manifest, in-workspace source files; the agent can propose edits only, never run
-  commands. Every run that invokes the agent stores a full transcript. Exhausting the loop's
-  bounds is guaranteed no worse than never having tried.
+  per-attempt timeout) over one accumulating working tree. Every run that invokes the agent
+  stores a full transcript. Exhausting the loop's bounds is guaranteed no worse than never having
+  tried.
+- **The agent is a real tool-using agent** (Microsoft Agent Framework), not a single prompt. Its
+  tools are read-only exploration of the run's workspace — list files, read a file (or range),
+  search text — plus **propose edit**. It can investigate beyond the files the diagnostics name
+  (call sites, interfaces, extension methods, the package's new API surface where available).
+- **It still never runs commands.** Restore/build are executed by the harness between attempts,
+  not by the agent. Proposed edits remain constrained to existing, non-manifest, in-workspace
+  source files; all tools are rooted in the workspace.
+- **Status:** *partial.* The loop, bounds, edit guard, and transcripts are built. The agent itself
+  (`MafRemediationAgent`) is a single chat prompt with the diagnosed files inlined (60k-char cap)
+  and no tools; the `Microsoft.Agents.AI` packages are referenced but unused.
 
 ### 6.9 Change review gate
 - An AI-repaired change that verifies is **held** (`AwaitingReview`) instead of pushed
@@ -159,17 +192,40 @@ one guarantees, distilled from specs that have since been retired.
   (one message → one run → the existing branch/PR is reused, never duplicated), and skips
   enqueueing a repository that's currently held for review.
 
-### 6.12 Run observability UI
+### 6.12 Ad-hoc (manual) runs
+- An operator can start a run for a single repository on demand ("Run now" on the repository in
+  the UI, and an API endpoint), outside the schedule. It enqueues the same
+  `RemediationRunRequested` message the scheduler does and follows the identical pipeline,
+  idempotency, and review-gate rules — including refusing to start while the repository is held
+  for review. The run records that it was manually triggered.
+- **Status:** *not built.* The scheduler is the only trigger today.
+
+### 6.13 Run observability UI
 - API + Web pages for a runs feed (filterable by status) and a run detail view: updates table,
   PR link, verification outcome with diagnostics and a log link, and — when applicable — AI
   attempt count and transcript link. A verification rejection is visually distinct from an
   unexpected tool failure.
+- **In-app attention signals** (the only notification channel for now): a persistent indicator in
+  the app shell counting runs that need a person — `AwaitingReview` and unexpected `Failed` — with
+  a list linking to each run. Held repositories show how long they've been held, so a stale hold
+  is visible rather than silent. No email/Teams/Slack delivery.
+- **Status:** feed, detail, and a "Held for review" panel on Home exist (Blazor); the app-shell
+  indicator and held-duration are *not built*.
 
-### 6.13 Web UI foundation
-- MudBlazor design system, a dark-default GitHub-esque app shell with a light toggle, consistent
-  styling across Home / Configuration / Dependency Map / Runs.
+### 6.14 Web UI foundation
+- A **React + TypeScript single-page app** replaces the Blazor Server app, talking only to the
+  existing HTTP API (the API stays the single backend; the SPA holds no server-side logic).
+  Built with Vite; components from **shadcn/ui + Tailwind** (tables via TanStack Table).
+  Keeps today's product shape: a dark-default GitHub-esque app shell with a light toggle and
+  consistent styling across Home / Configuration / Dependency Map / Runs / Run detail.
+- Composed by the Aspire AppHost for local development like every other service; deployed as
+  static assets from its own `web` Container App (nginx), which also reverse-proxies `/api` to
+  the API so the browser sees a single origin (no CORS) — see §6.18.
+- **Status:** *not built.* The current UI is Blazor Server + MudBlazor (`AutoRemediator.Web`);
+  it remains until the React app reaches parity, then is removed along with its Playwright
+  selectors (the functional suite is retargeted at the SPA).
 
-### 6.14 Platform: service orchestration
+### 6.15 Platform: service orchestration
 - A .NET Aspire AppHost composes every service; Storage/Service Bus run as local emulators; a
   local model resource lets the AI loop be exercised with zero cloud dependency. The remediation
   worker treats the model as a **soft** dependency — an unavailable model costs only repair
@@ -177,24 +233,36 @@ one guarantees, distilled from specs that have since been retired.
   as distinct from the deployed shape (scheduler = run-once cron ACA Job; remediation = KEDA
   queue-scaled ACA Job).
 
-### 6.15 Platform: solution scaffold & testing
+### 6.16 Platform: solution scaffold & testing
 - Inward-flowing project references (`Domain`/`Contracts` depend on nothing but `Shared`; no
   library depends on a host); vertical-slice API organization; MAF isolated in `Agents` with its
   contract owned by `Domain` so `Infrastructure` and `Agents` never reference each other. xUnit v3
   across projects + a Playwright functional suite; every scaffolded project carries at least one
   test.
 
-### 6.16 Platform: security & identity
+### 6.17 Platform: security & identity
 - Azure Storage/Service Bus clients resolve dual-mode from `ConnectionStrings:*` — an
   endpoint+`DefaultAzureCredential` (pinned to a user-assigned identity via `AZURE_CLIENT_ID`) in
   Azure, a connection string against local emulators otherwise — with a health check per resource
   and no explicit credential forced into the Aspire integrations (which would break the local
   emulator path).
+- **User authentication: Microsoft Entra ID.** The SPA signs users in with MSAL and calls the API
+  with a bearer token; the **API** validates the token and enforces authorization (the UI only
+  hides controls — it is never the enforcement point). Two app roles:
+  - **Admin** — manage repositories, targeting settings, and policy (plus everything Reviewer can).
+  - **Reviewer** — review commands (Approve / Rebuild / Retry / Discard) and ad-hoc "Run now".
+  - Any other signed-in user in the tenant is **read-only** (dashboards, runs, logs, transcripts).
+- **Audit:** every review command and manual trigger records the acting user on the run; an
+  approved PR's description names the approver.
+- Local development runs with auth disabled by explicit configuration; a deployed environment
+  refuses to start with auth disabled.
+- **Status:** *not built.* No authentication exists today.
 
-### 6.17 Infrastructure
+### 6.18 Infrastructure
 - Modular Terraform (`modules/` reused by `environments/<env>/`), pinned versions, local state
   documented with a stated remote-backend migration path. The **test** environment: Consumption
-  (scale-to-zero) Container Apps Environment, `api`/`web` as ingress Container Apps, `scheduler`
+  (scale-to-zero) Container Apps Environment, `api`/`web` as ingress Container Apps (`web` is an
+  nginx image serving the React build and proxying `/api`), `scheduler`
   (cron) and `remediation` (KEDA on `remediation-runs` queue depth) as Container Apps Jobs, budget
   SKUs throughout, a single user-assigned managed identity with RBAC (no stored account
   keys/connection strings), Key Vault for the one credential RBAC can't replace (the Azure DevOps
@@ -213,56 +281,91 @@ one guarantees, distilled from specs that have since been retired.
 | AwaitingReview | Terminal-*for now* status holding an AI-repaired, verified change for a human decision |
 | SkippedHeld | A scheduler bookkeeping run recording that a repository was not enqueued because it's currently held |
 
-## 8. Known gaps / open questions
+## 8. Decisions & open questions
 
-These are areas the specs are **silent** on — either genuinely undecided, explicitly flagged as
-a caveat in a spec, or out of scope for the slice that shipped. Listed so they can be resolved
-deliberately rather than assumed.
+Questions the original specs were silent on. Resolved items record the decision and point to
+the requirement it became; open items are deliberately deferred.
 
-- [ ] **No authentication or authorization.** `change-review-gate` explicitly flags this: anyone
-  who can reach the Web app can approve a change that pushes to the target repository. Accepted
-  for local use; **must be resolved before any deployed (non-local) exposure.** Who should be
-  allowed to approve? Is there a role distinction between "can configure repos/policy" and "can
-  approve a push"?
-- [ ] **CI/CD for this repository itself.** The Azure Pipelines setup that built/deployed this
-  repo was just removed as part of the GitHub migration; nothing replaces it yet (see recent
-  chore commits). Needs a decision: GitHub Actions, keep Azure Pipelines against the GitHub repo,
-  or something else — and whether it deploys to the existing Terraform `test` environment or a
-  new one.
-- [ ] **No production/staging environment.** `terraform-iac`/`azure-test-environment` define only
-  a budget-oriented `test` environment. Is there a target production topology (higher SKUs, HA,
-  a real backend for Terraform state, alerting)?
-- [ ] **No alerting/notification.** Health checks exist, but nothing pages or notifies anyone when
-  a repository is held for review, a run fails unexpectedly, or the model becomes unavailable for
-  an extended period. Should `AwaitingReview`/`Failed` trigger a notification (email, Teams,
-  Slack)?
-- [ ] **No data retention/cleanup policy.** Run history, verification logs, and AI transcripts
-  accumulate in Table/Blob Storage indefinitely per the specs as written. Is there a retention
-  window, or an expectation this grows unbounded?
-- [ ] **No stated scale/concurrency limits.** Nothing specifies how many repositories can be
-  configured, how many runs process concurrently, or how the system avoids hitting Azure DevOps
-  REST rate limits as the repo count grows.
-- [ ] **Single package ecosystem.** Everything is scoped to NuGet (`Directory.Packages.props`,
-  `*.csproj`). Is there any future intent to cover npm, or is that explicitly out of scope
-  long-term (not just for the shipped slices)?
-- [ ] **No rollback story for an approved change.** Once a proposal is approved and the PR is
-  merged downstream, there's no AutoRemediator-side "undo" — is that intentionally the target
-  repo's own revert process, or does this need a feature?
-- [ ] **PAT rotation/expiry.** The Azure DevOps PAT lives in Key Vault, but nothing specifies an
-  expiry/rotation process or what happens to in-flight runs when it expires.
-- [ ] **Multiple configured feeds — precedence unspecified.** `target-configuration` allows "one
-  or more" feeds; `dependency-analysis`/`local-verification` don't specify resolution order or
-  conflict handling when the same package could resolve from more than one.
-- [ ] **AI cost ceiling beyond per-run.** `Agents:TokenBudget` bounds a single run, but there's no
-  stated daily/monthly cost ceiling across all repositories — worth deciding before this scales
-  past a handful of repos.
-- [ ] **Deleted `.specify`/Spec Kit tooling still referenced by slash commands.** `.claude/skills`
-  and `.specify` were just removed from the repo (each dev now brings their own), but the
-  `speckit-*` skills that used to ship here read from `.specify/` at runtime. Decide whether
-  Spec Kit is still the intended workflow for new capability specs going forward, and if so, how
-  a new contributor sets it up.
+- [x] **No authentication or authorization.** *Resolved:* Entra ID with Admin/Reviewer app
+  roles, enforced by the API — see §6.17.
+- [x] **CI for this repository.** *Resolved:* GitHub Actions on every pull request — .NET
+  build + test, and lint + typecheck + build for the React app. Azurite-dependent tests run against
+  an Azurite service container (or keep self-skipping).
+- [ ] **Deployment of this repository.** *Deferred — where/how is not decided yet.* How (and
+  whether) images are published and Terraform is applied is left open; CI does not deploy.
+- [ ] **No production/staging environment.** *Deferred with deployment.* Only the budget `test`
+  Terraform environment exists, with local Terraform state; a production topology and a remote
+  state backend are decided when IaC work resumes.
+- [x] **No alerting/notification.** *Resolved:* in-app only for now — see §6.13. External
+  channels (Teams/email/Slack) are a future direction.
+- [x] **No data retention/cleanup policy.** *Resolved:* time-based retention configured by an app
+  setting (e.g. `Retention:RunDays`). A periodic cleanup deletes runs older than the window along
+  with their blobs (logs, transcripts, proposals); runs that are `AwaitingReview`, and each
+  repository's most recent run, are never deleted. **Status:** *not built.*
+- [x] **No stated scale/concurrency limits.** *Resolved:* design target is **tens of
+  repositories**. Runs process sequentially per worker; Azure DevOps throttling is handled by
+  honoring `429`/`Retry-After` rather than by a scheduler-side rate budget. Revisit when a real
+  deployment's repo count is known. **Status:** covered by Aspire's standard resilience handler
+  (applied to every `HttpClient`, including Azure DevOps), which retries `429` and honors
+  `Retry-After`. **Risks to check:** that handler also retries non-idempotent `POST`s (a push
+  that succeeded but timed out would be retried and then rejected as stale), and its default
+  total-request timeout (30 s) may cut off large repository zip downloads.
+- [x] **Single package ecosystem.** *Resolved:* NuGet only. Other ecosystems (npm, …) are a
+  future direction; no ecosystem abstraction is built until a second one is real.
+- [x] **No rollback story for an approved change.** *Resolved — non-goal:* the pull request is
+  the unit of change; undoing a merged change is the target repository's own revert process.
+- [x] **PAT rotation/expiry.** *Resolved:* rotation stays a manual secret update (Key Vault /
+  user-secrets), but an expired or invalid PAT is **detected and surfaced**: Azure DevOps auth
+  failures (`401`, or the `203` sign-in page ADO returns for bad credentials) end a run as a
+  distinct *credential* failure rather than a generic `Failed`, raise an in-app attention signal,
+  and stop the scheduler from fanning out runs that would all fail the same way.
+  **Status:** *not built.*
+- [x] **Multiple configured feeds — precedence unspecified.** *Resolved:* **mapped and loud.**
+  Each feed declares the package patterns it serves (NuGet package-source-mapping style), so a
+  package resolves only from its mapped feed(s); and each feed declares whether it receives the
+  Azure DevOps PAT — by default only Azure DevOps-hosted feeds do. A feed failure is surfaced on
+  the dependency map and the run as a feed error, never collapsed into `Unknown`.
+  **Status:** *not built.* Today versions are unioned across all feeds, a failing feed is
+  silently skipped, and the PAT is attached to **every** feed regardless of host
+  (`FeedVersionResolver`, `PackageDependencyReader`) — a credential-exposure risk once
+  non-ADO feeds are configured.
+- [x] **AI cost ceiling beyond per-run.** *Resolved:* a global **daily token cap** app setting
+  alongside the per-run `Agents:TokenBudget`. When exhausted, runs continue mechanically and record
+  "AI budget exhausted" — the same soft-dependency path as an unavailable model. Token usage per
+  run and per day is visible in-app. **Status:** *not built.*
 
-## 9. References
+### Known defects (found in the 2026-10-13 code review)
 
-- Product roadmap and slice sequencing: [`ROADMAP.md`](../ROADMAP.md)
+- **Base mismatch in planning:** manifests are read from the target branch, but edits are applied
+  over the `autoremediator/dependency-updates` head when that branch exists
+  (`RemediationRunner.cs:71`). Planning and applying must use the same base.
+- **Broken log/transcript links:** `RunDetail.razor` builds browser links from the internal
+  `https+http://api` service-discovery address. (Moot after the React rewrite, but the SPA must
+  use relative `/api` links.)
+- **"Open PRs" KPI is wrong:** counts runs that have a PR URL — not open PRs, and repeat runs on
+  one PR are counted repeatedly. Conflicts with the "run ends at the PR" non-goal; replace with
+  a metric the system actually knows (e.g. "runs that opened/updated a PR, last 7 days").
+- **Swallowed errors:** Service Bus `ProcessErrorAsync` discards errors silently; feed failures
+  collapse into `Unknown` (see feeds decision above).
+- **Configuration UI gaps:** repositories can't be edited or enabled/disabled in the UI (the API
+  supports it); per-repository `Organization` is stored but ignored — one
+  `AzureDevOps:OrganizationUrl` is used for everything.
+- **Dependency map is computed live** against Azure DevOps and every feed for every repository on
+  each page load; it should come from the latest run's analysis (or a cached snapshot).
+- **Flaky API test suite:** `AutoRemediator.Api.Tests` intermittently times out building the
+  host (`WebApplicationFactory`, 5-minute host-factory timeout) — 3–5 of 30 tests fail on `main`.
+
+## 9. Future directions
+
+Decided as *not now*, recorded so the architecture doesn't preclude them:
+
+- **GitHub support** — second source-control platform alongside Azure DevOps.
+- **Package-publish trigger** — publishing `Contoso.Core 2.0` fans out runs to every consuming
+  repository, instead of waiting for the next scheduled run.
+- **Additional package ecosystems** — e.g. npm, behind an ecosystem seam introduced when needed.
+- **External notifications** — Teams/email/Slack delivery of the in-app attention signals.
+- **Post-PR tracking** — follow the opened PR through CI and merge; feeds real outcome metrics.
+
+## 10. References
+
 - Repo layout and local run instructions: [`README.md`](../README.md)

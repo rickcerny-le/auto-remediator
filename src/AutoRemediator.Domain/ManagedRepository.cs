@@ -4,7 +4,6 @@ namespace AutoRemediator.Domain;
 
 /// <summary>
 /// An Azure DevOps repository enrolled for automated dependency remediation.
-/// Placeholder aggregate for the scaffold — behavior is added in later changes.
 /// </summary>
 public sealed class ManagedRepository : Entity<Guid>
 {

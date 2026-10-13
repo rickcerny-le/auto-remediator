@@ -68,7 +68,7 @@ public static class InfrastructureExtensions
         builder.Services.AddSingleton<IChangeProposalStore, ChangeProposalStore>();
         builder.Services.AddScoped<IReviewCommandHandler, ReviewCommandHandler>();
 
-        // Azure DevOps connectivity (read-only REST) + PAT Basic auth.
+        // Azure DevOps connectivity (REST) + PAT Basic auth.
         builder.Services.AddOptions<AzureDevOpsOptions>()
             .Bind(config.GetSection(AzureDevOpsOptions.SectionName));
         builder.Services.AddHttpClient<IAzureDevOpsClient, AzureDevOpsClient>((sp, http) =>
