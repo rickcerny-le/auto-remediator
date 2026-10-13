@@ -170,8 +170,8 @@ module "web" {
   env_vars = merge(
     local.identity_env,
     {
-      # .NET service discovery target for the "api" client used by the Web app.
-      "services__api__https__0" = "https://${module.api.fqdn}"
+      # Upstream for nginx's /api reverse proxy in the web image (no trailing slash).
+      "API_URL" = "https://${module.api.fqdn}"
     },
   )
   tags = local.common_tags

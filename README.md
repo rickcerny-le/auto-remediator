@@ -3,7 +3,7 @@
 Automatically updates dependencies across configured Azure DevOps repositories, opens
 pull requests, and runs an AI loop (Microsoft Agent Framework + Azure AI Foundry) to
 address breaking changes the updates introduce. Runs are timed, queued, and processed
-by horizontally scalable workers. A Blazor web UI configures the tool and shows status.
+by horizontally scalable workers. A React web UI configures the tool and shows status.
 
 ## Solution layout
 
@@ -13,7 +13,7 @@ src/
   AutoRemediator.AppHost            # .NET Aspire orchestrator (composes everything)
   AutoRemediator.ServiceDefaults    # OpenTelemetry, health checks, service discovery
   AutoRemediator.Api                # Minimal API, vertical slice (endpoints -> handlers, no mediator)
-  AutoRemediator.Web                # Blazor Web App (Interactive Server, MudBlazor)
+  AutoRemediator.Web                # React + TypeScript SPA (Vite, shadcn/ui + Tailwind, TanStack Table)
   AutoRemediator.Worker.Scheduler   # Run-once trigger -> enqueues remediation runs
   AutoRemediator.Worker.Remediation # Queue consumer -> runs the remediation/AI loop
   AutoRemediator.Agents             # Microsoft Agent Framework agents (Azure AI Foundry)
@@ -33,7 +33,8 @@ tests/
 Reference topology flows inward toward the domain: `Domain`/`Contracts` depend only on
 `Shared`; `Infrastructure` and `Agents` depend on `Domain`/`Contracts`/`Shared`; hosts
 depend on `Infrastructure`/`Contracts`/`ServiceDefaults` (the remediation worker also on
-`Agents`). No library references a host.
+`Agents`). No library references a host. The web app is not a .NET project: it talks to the API
+over HTTP only, through same-origin `/api/...` URLs.
 
 ## Prerequisites
 
@@ -41,6 +42,7 @@ depend on `Infrastructure`/`Contracts`/`ServiceDefaults` (the remediation worker
 - .NET Aspire templates (`dotnet new install Aspire.ProjectTemplates`) — 13.4.6
 - The Aspire CLI (`dotnet tool install -g Aspire.Cli`) — 13.4.6. Use it to start and stop
   the app; see [Run locally](#run-locally-aspire).
+- Node.js 24 with npm, for the web app. The AppHost runs `npm install` for it on start.
 - A container runtime (Docker Desktop or Podman) **running**, to start the local
   Azurite (Storage) and Azure Service Bus emulators when you run the AppHost.
 - [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/get-started)
@@ -55,6 +57,10 @@ depend on `Infrastructure`/`Contracts`/`ServiceDefaults` (the remediation worker
 ```bash
 dotnet build AutoRemediator.sln
 dotnet test  AutoRemediator.sln     # Playwright functional test self-skips (no app running)
+
+cd src/AutoRemediator.Web
+npm install
+npm run lint && npm run typecheck && npm run build
 ```
 
 ## Run locally (Aspire)
@@ -70,6 +76,11 @@ Blobs), the Service Bus emulator, and the local model, then launches the API, We
 both workers with their connection information injected — no connection strings are
 hard-coded in project code. A running container runtime is required.
 
+The web app runs on the Vite dev server. The AppHost passes it the API's address, and Vite
+proxies `/api` to it, so the browser sees a single origin, as it does when deployed. To work on
+the UI alone against an API you already have running, set that address yourself:
+`services__api__http__0=http://localhost:<port> npm run dev`.
+
 Use the Aspire CLI rather than `dotnet run` on the AppHost: `dotnet run` bypasses the
 CLI's lifecycle management and leaves orphaned processes holding file locks on `bin/` and
 `obj/`. If a build fails with `MSB3491` or `CS2012`, the app is still running — `aspire
@@ -84,6 +95,14 @@ With the app running, take the Web URL from the Aspire dashboard and run:
 pwsh tests/AutoRemediator.Web.FunctionalTests/bin/Debug/net10.0/playwright.ps1 install
 WEB_BASE_URL=<web-url> dotnet test tests/AutoRemediator.Web.FunctionalTests
 ```
+
+## Web app — local vs. deployed
+
+Locally the SPA is served by the Vite dev server. Deployed, `src/AutoRemediator.Web/Dockerfile`
+builds it with Node and serves the static files from nginx on port 8080 (build from the repository
+root like the other images). nginx also reverse-proxies `/api` to the API at the `API_URL`
+environment variable, read at container start, e.g. `API_URL=https://<api-fqdn>` with no trailing
+slash.
 
 ## Worker execution models — local vs. deployed
 

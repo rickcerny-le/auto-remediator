@@ -1,16 +1,14 @@
-# Build from the repository root so shared project references resolve:
+# Build from the repository root, like the other services:
 #   docker build -f src/AutoRemediator.Web/Dockerfile -t <image> .
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG BUILD_CONFIGURATION=Release
+# Run with API_URL set to the API's base URL; nginx proxies /api to it.
+FROM node:24-alpine AS build
 WORKDIR /src
+COPY src/AutoRemediator.Web/package.json src/AutoRemediator.Web/package-lock.json ./
+RUN npm ci
+COPY src/AutoRemediator.Web/ ./
+RUN npm run build
 
-COPY . .
-RUN dotnet restore "src/AutoRemediator.Web/AutoRemediator.Web.csproj"
-RUN dotnet publish "src/AutoRemediator.Web/AutoRemediator.Web.csproj" \
-    -c "$BUILD_CONFIGURATION" -o /app/publish --no-restore /p:UseAppHost=false
-
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
-WORKDIR /app
-COPY --from=build /app/publish .
+FROM nginx:stable-alpine AS final
+COPY src/AutoRemediator.Web/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /src/dist /usr/share/nginx/html
 EXPOSE 8080
-ENTRYPOINT ["dotnet", "AutoRemediator.Web.dll"]

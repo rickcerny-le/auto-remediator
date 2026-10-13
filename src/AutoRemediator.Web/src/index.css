@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* AutoRemediator: a GitHub-esque, emerald-accented theme (dark default, light alternate).
+   Emerald is the primary/success accent; amber/red/blue carry semantic state so the UI reads
+   at a glance without a single neon pop. Values carried over from the Blazor app's AppTheme. */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 8px;
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --card-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  --primary: #1a7f37;
+  --primary-foreground: #ffffff;
+  --secondary: #f6f8fa;
+  --secondary-foreground: #1f2328;
+  --muted: #f6f8fa;
+  --muted-foreground: #59636e;
+  --subtle: #818b96;
+  --accent: #f6f8fa;
+  --accent-foreground: #1f2328;
+  --destructive: #cf222e;
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --info: #0969da;
+  --border: #d0d7de;
+  --input: #d0d7de;
+  --ring: #1a7f37;
+  --header: #f6f8fa;
+  --sidebar: #f6f8fa;
+}
+
+.dark {
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --card: #161b22;
+  --card-foreground: #e6edf3;
+  --popover: #161b22;
+  --popover-foreground: #e6edf3;
+  --primary: #3fb950;
+  --primary-foreground: #0d1117;
+  --secondary: #21262d;
+  --secondary-foreground: #e6edf3;
+  --muted: #161b22;
+  --muted-foreground: #8b949e;
+  --subtle: #6e7681;
+  --accent: #1c2128;
+  --accent-foreground: #e6edf3;
+  --destructive: #f85149;
+  --success: #3fb950;
+  --warning: #d29922;
+  --info: #58a6ff;
+  --border: #30363d;
+  --input: #30363d;
+  --ring: #3fb950;
+  --header: #161b22;
+  --sidebar: #0f141b;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-header: var(--header);
+  --color-sidebar: var(--sidebar);
+  --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  }
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .ar-label {
+    @apply text-[11px] font-semibold tracking-[.06em] text-muted-foreground uppercase;
+  }
+
+  /* Status pills: tinted background, colored text, dot. */
+  .ar-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-[9px] py-0.5 text-[11.5px] leading-[1.7] font-semibold whitespace-nowrap;
+  }
+  .ar-pill > .ar-dot {
+    @apply size-1.5 flex-none rounded-full bg-current;
+  }
+  .ar-pill.ok {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 14%, transparent);
+  }
+  .ar-pill.warn {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 15%, transparent);
+  }
+  .ar-pill.bad {
+    color: var(--destructive);
+    background: color-mix(in srgb, var(--destructive) 13%, transparent);
+  }
+  .ar-pill.info {
+    color: var(--info);
+    background: color-mix(in srgb, var(--info) 13%, transparent);
+  }
+  .ar-pill.mute {
+    color: var(--muted-foreground);
+    background: color-mix(in srgb, var(--muted-foreground) 12%, transparent);
+  }
+  .ar-pill.run > .ar-dot {
+    animation: ar-pulse 1.4s ease-in-out infinite;
+  }
+
+  .ar-tag {
+    @apply ml-1.5 rounded-[5px] border border-warning px-[5px] font-mono text-[10.5px] text-warning;
+  }
+}
+
+@keyframes ar-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ar-pill.run > .ar-dot {
+    animation: none;
+  }
+}
