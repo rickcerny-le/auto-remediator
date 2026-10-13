@@ -97,31 +97,41 @@ export function ConfigurationPage() {
 
   const saveSettings = async (e: FormEvent) => {
     e.preventDefault()
-    const response = await api.saveSettings({
-      patterns: split(patterns),
-      excludes: split(excludes),
-      feeds: split(feeds),
-      strategy,
-      ignore: split(ignore),
-      allowPrerelease,
-    })
-    setStatus(response.ok ? 'Settings saved.' : `Save failed (${response.status}).`)
+    try {
+      const response = await api.saveSettings({
+        patterns: split(patterns),
+        excludes: split(excludes),
+        feeds: split(feeds),
+        strategy,
+        ignore: split(ignore),
+        allowPrerelease,
+      })
+      setStatus(response.ok ? 'Settings saved.' : `Save failed (${response.status}).`)
+    } catch (e) {
+      setStatus(`Save failed: ${errorMessage(e)}`)
+    }
   }
 
   const addRepo = async (e: FormEvent) => {
     e.preventDefault()
-    const response = await api.addRepository({ ...newRepo, enabled: true, targetBranch: newRepo.targetBranch.trim() || 'main' })
-    if (response.ok) {
+    try {
+      const response = await api.addRepository({ ...newRepo, enabled: true, targetBranch: newRepo.targetBranch.trim() || 'main' })
+      if (!response.ok) return setStatus(`Add failed (${response.status}).`)
       setNewRepo(emptyRepo)
-      await loadRepos()
-    } else {
-      setStatus(`Add failed (${response.status}).`)
+    } catch (e) {
+      return setStatus(`Add failed: ${errorMessage(e)}`)
     }
+    await loadRepos()
   }
 
   const deleteRepo = useCallback(
     async (id: string) => {
-      await api.deleteRepository(id)
+      try {
+        const response = await api.deleteRepository(id)
+        if (!response.ok) setStatus(`Delete failed (${response.status}).`)
+      } catch (e) {
+        setStatus(`Delete failed: ${errorMessage(e)}`)
+      }
       await loadRepos()
     },
     [loadRepos],

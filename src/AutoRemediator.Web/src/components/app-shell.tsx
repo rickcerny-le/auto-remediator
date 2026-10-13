@@ -11,6 +11,8 @@ const nav = [
   { to: '/configuration', label: 'Configuration', icon: Settings, end: false },
 ]
 
+const isWide = () => window.matchMedia('(min-width: 768px)').matches
+
 function useDarkMode() {
   const [dark, setDark] = useState(() => localStorage.getItem('theme') !== 'light')
   useEffect(() => {
@@ -23,7 +25,9 @@ function useDarkMode() {
 /** GitHub-style app shell: top bar with brand and theme toggle, collapsible side navigation. */
 export function AppShell() {
   const [dark, setDark] = useDarkMode()
-  const [drawerOpen, setDrawerOpen] = useState(() => window.matchMedia('(min-width: 768px)').matches)
+  const [drawerOpen, setDrawerOpen] = useState(isWide)
+  // Below md the drawer overlays the page, so it closes once a link is followed.
+  const closeIfNarrow = () => !isWide() && setDrawerOpen(false)
 
   return (
     <div className="min-h-screen">
@@ -56,6 +60,7 @@ export function AppShell() {
               key={to}
               to={to}
               end={end}
+              onClick={closeIfNarrow}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 px-4 py-2 text-sm text-foreground/80 hover:bg-accent',
