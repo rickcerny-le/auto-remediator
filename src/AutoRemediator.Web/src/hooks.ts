@@ -41,3 +41,43 @@ export function useLoad<T>(load: () => Promise<T>) {
 
   return { data: state.data, error: state.error, loading: state.loading || state.source !== load, reload }
 }
+
+export type ThemeMode = 'light' | 'dark' | 'system'
+
+const THEME_QUERY = '(prefers-color-scheme: dark)'
+const themeOrder: ThemeMode[] = ['system', 'light', 'dark']
+
+function readThemeMode(): ThemeMode {
+  const stored = localStorage.getItem('theme')
+  return stored === 'light' || stored === 'dark' ? stored : 'system'
+}
+
+/**
+ * Theme mode (`light | dark | system`, default `system`) persisted in `localStorage.theme`.
+ * `system` follows the OS scheme live. The same resolution runs in the pre-paint script in index.html.
+ * `cycle()` advances system -> light -> dark -> system.
+ */
+export function useTheme() {
+  const [mode, setMode] = useState<ThemeMode>(readThemeMode)
+
+  useEffect(() => {
+    const query = window.matchMedia(THEME_QUERY)
+    const root = document.documentElement
+    const apply = () => {
+      const dark = mode === 'dark' || (mode === 'system' && query.matches)
+      root.classList.toggle('dark', dark)
+      root.style.colorScheme = dark ? 'dark' : 'light'
+    }
+    apply()
+    if (mode === 'system') {
+      localStorage.removeItem('theme')
+      query.addEventListener('change', apply)
+      return () => query.removeEventListener('change', apply)
+    }
+    localStorage.setItem('theme', mode)
+  }, [mode])
+
+  const cycle = useCallback(() => setMode((m) => themeOrder[(themeOrder.indexOf(m) + 1) % themeOrder.length]), [])
+
+  return { mode, cycle }
+}

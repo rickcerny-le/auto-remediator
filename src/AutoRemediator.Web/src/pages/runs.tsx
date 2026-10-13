@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useSearchParams } from 'react-router'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -20,7 +20,7 @@ const columns = col.columns([
   col.accessor('repositorySlug', { header: 'Repository', cell: (c) => <span className="font-mono">{c.getValue()}</span> }),
   col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} /> }),
   col.accessor('startedAtUtc', { header: 'Started', cell: (c) => <Timestamp iso={c.getValue()} /> }),
-  col.accessor('updateCount', { header: 'Updates', cell: (c) => <span className="font-mono">{c.getValue()}</span> }),
+  col.accessor('updateCount', { header: 'Updates', cell: (c) => c.getValue() }),
   col.accessor('pullRequestUrl', { header: 'PR', cell: (c) => <PullRequestLink url={c.getValue()} /> }),
 ])
 
@@ -29,7 +29,6 @@ const noRuns: RunSummary[] = []
 
 export function RunsPage() {
   useTitle('Runs · AutoRemediator')
-  const navigate = useNavigate()
   // The status filter lives in the URL (?status=...) so a filtered feed can be linked to.
   const [params, setParams] = useSearchParams()
   const status = params.get('status') ?? undefined
@@ -70,7 +69,8 @@ export function RunsPage() {
             data={runs}
             loading={loading}
             empty={<span data-testid="runs-empty">No runs yet.</span>}
-            onRowClick={(run) => navigate(`/runs/${run.id}`)}
+            caption="Runs"
+            rowHref={(run) => `/runs/${run.id}`}
             testId="runs-table"
           />
         </Card>

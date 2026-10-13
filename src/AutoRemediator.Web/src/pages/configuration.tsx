@@ -148,14 +148,14 @@ export function ConfigurationPage() {
       <PageHeader title="Configuration" />
 
       {status !== null && (
-        <Alert variant="info" className="mb-4" data-testid="config-status">
+        <Alert variant="info" role="status" className="mb-6" data-testid="config-status">
           <AlertDescription>{status}</AlertDescription>
         </Alert>
       )}
 
-      <Card className="mb-6 max-w-[720px] p-5">
-        <form className="grid gap-3" onSubmit={(e) => void saveSettings(e)}>
-          <h2 className="text-lg font-semibold">Targeting settings</h2>
+      <Card className="mb-8 max-w-[720px] p-6">
+        <form className="grid gap-4" onSubmit={(e) => void saveSettings(e)}>
+          <h2 className="text-base font-semibold">Targeting settings</h2>
           <Field id="patterns" label="Package patterns (comma-separated)" placeholder="Contoso.*" value={patterns} onChange={setPatterns} testId="patterns" />
           <Field id="excludes" label="Exclude patterns" placeholder="Contoso.Legacy.*" value={excludes} onChange={setExcludes} testId="excludes" />
           <Field id="feeds" label="Feeds" placeholder="https://pkgs.dev.azure.com/Contoso/..." value={feeds} onChange={setFeeds} testId="feeds" />
@@ -187,17 +187,18 @@ export function ConfigurationPage() {
         </form>
       </Card>
 
-      <h2 className="mb-2 text-lg font-semibold">Managed repositories</h2>
-      <Card className="mb-3 py-0">
-        <DataTable columns={columns} data={repos} empty="No repositories configured." testId="repos-table" />
+      <h2 className="mb-3 text-base font-semibold">Managed repositories</h2>
+      <Card className="mb-6 py-0">
+        <DataTable columns={columns} data={repos} caption="Managed repositories" empty="No repositories configured." testId="repos-table" />
       </Card>
 
-      <Card className="max-w-[900px] p-4">
-        <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => void addRepo(e)}>
-          {repoField('organization', 'organization')}
-          {repoField('project', 'project')}
-          {repoField('name', 'repository')}
-          {repoField('targetBranch', 'branch')}
+      <Card className="max-w-[900px] p-5">
+        <h2 className="mb-3 text-base font-semibold">Add a repository</h2>
+        <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => void addRepo(e)}>
+          {repoField('organization', 'Organization')}
+          {repoField('project', 'Project')}
+          {repoField('name', 'Repository')}
+          {repoField('targetBranch', 'Branch')}
           <Button type="submit" className="bg-success text-primary-foreground hover:bg-success/90" data-testid="add-repo">
             Add
           </Button>

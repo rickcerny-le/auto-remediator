@@ -7,20 +7,23 @@ export function RunStatus({ status }: { status: string }) {
 }
 
 export function PullRequestLink({ url }: { url: string | null }) {
-  if (url === null) return <span className="font-mono text-subtle">—</span>
+  if (url === null) return (
+      <span className="text-subtle" role="img" aria-label="No pull request">
+        —
+      </span>
+    )
   return (
     <a
       href={url}
       target="_blank"
       rel="noreferrer"
-      className="font-mono text-info hover:underline"
-      onClick={(e) => e.stopPropagation()}
+      className="text-info hover:underline"
     >
-      open
+      open<span className="sr-only"> (opens in a new tab)</span>
     </a>
   )
 }
 
 export function Timestamp({ iso }: { iso: string }) {
-  return <span className="font-mono text-muted-foreground">{formatDate(iso)}</span>
+  return <span className="text-muted-foreground">{formatDate(iso)}</span>
 }
