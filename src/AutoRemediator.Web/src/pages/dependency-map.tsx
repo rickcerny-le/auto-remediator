@@ -67,14 +67,14 @@ export function DependencyMapPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : map === null ? (
-        <p className="text-sm italic">Click Refresh to run analysis.</p>
+        <p className="italic">Click Refresh to run analysis.</p>
       ) : (
         <Card className="py-0">
           <DataTable
             columns={columns}
             data={map.entries}
             empty={<span data-testid="map-empty">No matched packages found.</span>}
-            testId="map-table"
+            caption="Dependency map" testId="map-table"
           />
         </Card>
       )}

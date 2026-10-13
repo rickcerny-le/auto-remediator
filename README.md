@@ -96,6 +96,22 @@ pwsh tests/AutoRemediator.Web.FunctionalTests/bin/Debug/net10.0/playwright.ps1 i
 WEB_BASE_URL=<web-url> dotnet test tests/AutoRemediator.Web.FunctionalTests
 ```
 
+`AccessibilityTests` runs axe-core (WCAG 2.0/2.1/2.2 A and AA, via the `Deque.AxeCore.Playwright`
+NuGet package) over every route in light and dark, plus the mobile navigation drawer at 375px. The
+run-detail case uses the first run from `/api/runs` (the unknown-run page if none exists). To cover
+the review panel too, run `ReviewGateTests` first (it seeds a held run) with `ConnectionStrings__tables`
+and `ConnectionStrings__blobs` pointing at the running Azurite.
+
+axe finds only the machine-checkable part of WCAG. Before a release that changes the UI, also check
+manually:
+
+- [ ] Keyboard only: every page reachable and operable, focus always visible, no traps outside the drawer.
+- [ ] 200% browser zoom at 1280px: no clipped or overlapping content.
+- [ ] 320px width: no horizontal page scroll (tables scroll inside their own region).
+- [ ] Text spacing override (WCAG 1.4.12 bookmarklet): no clipped text.
+- [ ] Reduced motion on: nothing animates.
+- [ ] Windows high contrast / forced colors: focus rings and pill labels remain visible.
+
 ## Web app — local vs. deployed
 
 Locally the SPA is served by the Vite dev server. Deployed, `src/AutoRemediator.Web/Dockerfile`

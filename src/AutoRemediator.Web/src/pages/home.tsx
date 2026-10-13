@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router'
+import { Link } from 'react-router'
 import { Plus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -22,7 +22,7 @@ const recentColumns = col.columns([
   col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} /> }),
   col.accessor('updateCount', {
     header: 'Updates',
-    cell: (c) => <span className="font-mono">{c.getValue()}</span>,
+    cell: (c) => c.getValue(),
     meta: { className: 'text-right' },
   }),
   col.accessor('pullRequestUrl', { header: 'PR', cell: (c) => <PullRequestLink url={c.getValue()} /> }),
@@ -45,8 +45,8 @@ function Kpi({ label, value, sub, valueClass }: { label: string; value: React.Re
   return (
     <Card className="gap-0 p-5">
       <div className="ar-label">{label}</div>
-      <div className={`mt-1.5 font-mono text-3xl font-bold tracking-tight ${valueClass ?? ''}`}>{value}</div>
-      <div className="mt-0.5 text-xs text-muted-foreground">{sub}</div>
+      <div className={`mt-2 text-kpi font-bold tracking-tight tabular-nums ${valueClass ?? ''}`}>{value}</div>
+      <div className="mt-1 text-label text-muted-foreground">{sub}</div>
     </Card>
   )
 }
@@ -76,13 +76,12 @@ const join = (values: string[] | undefined) => (values && values.length > 0 ? va
 
 export function HomePage() {
   useTitle('Overview · AutoRemediator')
-  const navigate = useNavigate()
   const { data, loading, reload } = useLoad(loadDashboard)
   const repoCount = data?.repos.length ?? 0
   const runs = data?.runs ?? noRuns
   const settings = data?.settings ?? null
 
-  const openRun = (run: RunSummary) => navigate(`/runs/${run.id}`)
+  const runHref = (run: RunSummary) => `/runs/${run.id}`
   const held = runs.filter((r) => r.status === 'AwaitingReview')
   const failed = runs.filter((r) => r.status === 'Failed').length
   // Known defect (PRD §8): this counts runs with a PR link, not open PRs. Ported as-is.
@@ -102,45 +101,52 @@ export function HomePage() {
         </Button>
       </PageHeader>
 
-      <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Kpi label="Managed repos" value={repoCount} sub="enrolled for remediation" />
         <Kpi
           label="Runs"
           value={runs.length}
           sub={
             <>
-              <span className="font-mono text-destructive">{failed}</span> failed
+              <span className="font-semibold text-destructive tabular-nums">{failed}</span> failed
             </>
           }
         />
         <Kpi label="Open PRs" value={prs} sub="opened by AutoRemediator" valueClass="text-success" />
-        <Kpi label="Strategy" value={<span className="text-[22px]">{strategy}</span>} sub="update policy" />
+        <Kpi label="Strategy" value={strategy} sub="update policy" />
       </div>
 
       {held.length > 0 && (
-        <Card className="mb-4 gap-0 py-0" data-testid="held-panel">
+        <Card className="mb-6 gap-0 py-0" data-testid="held-panel">
           <div className="flex items-center border-b p-4">
-            <h2 className="mr-auto font-semibold">Held for review</h2>
+            <h2 className="mr-auto text-base font-semibold">Held for review</h2>
             <Pill tone="warn">
               {held.length} {held.length === 1 ? 'repository' : 'repositories'}
             </Pill>
           </div>
-          <DataTable columns={heldColumns} data={held} onRowClick={openRun} testId="held-table" />
+          <DataTable
+            columns={heldColumns}
+            data={held}
+            caption="Runs awaiting review"
+            rowHref={runHref}
+            testId="held-table"
+          />
         </Card>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-3">
         <Card className="gap-0 py-0 md:col-span-2">
           <div className="flex items-center border-b p-4">
-            <h2 className="mr-auto font-semibold">Recent runs</h2>
-            <Link to="/runs" className="text-[13px] text-info hover:underline">
+            <h2 className="mr-auto text-base font-semibold">Recent runs</h2>
+            <Link to="/runs" className="text-sm text-info hover:underline">
               View all →
             </Link>
           </div>
           <DataTable
             columns={recentColumns}
             data={runs.slice(0, 6)}
-            onRowClick={openRun}
+            caption="Recent runs"
+            rowHref={runHref}
             loading={loading}
             empty="No runs yet."
             testId="recent-runs"
@@ -148,7 +154,7 @@ export function HomePage() {
         </Card>
 
         <Card className="gap-0 p-4" data-testid="targeting">
-          <h2 className="mb-3 font-semibold">Targeting</h2>
+          <h2 className="mb-3 text-base font-semibold">Targeting</h2>
           <TargetingRow label="Patterns">
             <span className="font-mono text-success">{join(settings?.patterns) ?? '—'}</span>
           </TargetingRow>

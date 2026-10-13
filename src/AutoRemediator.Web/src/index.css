@@ -1,13 +1,52 @@
 @import "tailwindcss";
 
-/* AutoRemediator: a GitHub-esque, emerald-accented theme (dark default, light alternate).
+/* AutoRemediator: a GitHub-esque, emerald-accented theme (light / dark / follow the OS).
    Emerald is the primary/success accent; amber/red/blue carry semantic state so the UI reads
-   at a glance without a single neon pop. Values carried over from the Blazor app's AppTheme. */
+   at a glance without a single neon pop.
+
+   CONTRAST TABLE (WCAG 2.2 AA). Ratios use the WCAG 2.x relative-luminance formula; translucent
+   pill tints are composited over the surface before measuring.
+   Requirement: 1.4.3 = text >= 4.5:1; 1.4.11 = non-text UI (control boundaries, focus ring) >= 3:1.
+   --border is decorative (dividers, card outlines) and needs no ratio; controls use --input.
+
+   Pair                                  Light   Dark    Req
+   --foreground on --background          15.80   16.02   1.4.3
+   --foreground on --card                15.80   14.64   1.4.3
+   --foreground on --muted               14.84   14.64   1.4.3
+   --muted-foreground on --background     6.11    6.15   1.4.3
+   --muted-foreground on --card           6.11    5.62   1.4.3
+   --muted-foreground on --muted          5.74    5.62   1.4.3
+   --subtle on --background               5.33    5.07   1.4.3
+   --subtle on --card                     5.33    4.64   1.4.3
+   --subtle on --muted                    5.01    4.64   1.4.3
+   --primary-foreground on --primary      5.08    7.45   1.4.3
+   --success on --background              6.52    7.45   1.4.3
+   --success on --card                    6.52    6.81   1.4.3
+   --warning on --background              6.59    7.50   1.4.3
+   --warning on --card                    6.59    6.85   1.4.3
+   --destructive on --background          5.96    6.75   1.4.3
+   --destructive on --card                5.96    6.17   1.4.3
+   --info on --background                 5.94    7.49   1.4.3
+   --info on --card                       5.94    6.85   1.4.3
+   --input on --background                3.50    4.12   1.4.11
+   --input on --card                      3.50    3.77   1.4.11
+   --ring on --background                 5.08    7.45   1.4.11
+   --ring on --card                       5.08    6.81   1.4.11
+
+   Pill text on its tinted background (light / dark), by the surface the pill sits on:
+   Pill (tint)                   on --background  on --card     on --muted     Req
+   ok   (--success 10%)          5.63 / 6.51      5.63 / 5.84   5.30 / 5.84    1.4.3
+   warn (--warning 10%)          5.69 / 6.56      5.69 / 5.88   5.36 / 5.88    1.4.3
+   bad  (--destructive 9%)       5.14 / 6.10      5.14 / 5.50   4.84 / 5.50    1.4.3
+   info (--info 9%)              5.20 / 6.62      5.20 / 5.94   4.90 / 5.94    1.4.3
+   mute (--muted-foreground 9%)  5.41 / 5.52      5.41 / 4.96   5.09 / 4.96    1.4.3
+   The pill dot is currentColor, so it carries the text colour (above the 3:1 needed). */
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 8px;
+  --radius: 12px;
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #1f2328;
   --card: #ffffff;
@@ -20,21 +59,23 @@
   --secondary-foreground: #1f2328;
   --muted: #f6f8fa;
   --muted-foreground: #59636e;
-  --subtle: #818b96;
+  --subtle: #636c76;
   --accent: #f6f8fa;
   --accent-foreground: #1f2328;
-  --destructive: #cf222e;
-  --success: #1a7f37;
-  --warning: #9a6700;
-  --info: #0969da;
+  --destructive: #c21f2b;
+  --success: #166c2e;
+  --warning: #845200;
+  --info: #0860ca;
   --border: #d0d7de;
-  --input: #d0d7de;
+  --input: #818a94;
   --ring: #1a7f37;
   --header: #f6f8fa;
   --sidebar: #f6f8fa;
+  --elevation-card: 0 1px 2px rgb(31 35 40 / 0.06), 0 1px 3px rgb(31 35 40 / 0.08);
 }
 
 .dark {
+  color-scheme: dark;
   --background: #0d1117;
   --foreground: #e6edf3;
   --card: #161b22;
@@ -47,23 +88,24 @@
   --secondary-foreground: #e6edf3;
   --muted: #161b22;
   --muted-foreground: #8b949e;
-  --subtle: #6e7681;
+  --subtle: #7d8590;
   --accent: #1c2128;
   --accent-foreground: #e6edf3;
-  --destructive: #f85149;
+  --destructive: #ff6a63;
   --success: #3fb950;
   --warning: #d29922;
   --info: #58a6ff;
   --border: #30363d;
-  --input: #30363d;
+  --input: #6e7681;
   --ring: #3fb950;
   --header: #161b22;
   --sidebar: #0f141b;
+  --elevation-card: none;
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: 6px;
+  --radius-md: 8px;
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
@@ -90,6 +132,11 @@
   --color-ring: var(--ring);
   --color-header: var(--header);
   --color-sidebar: var(--sidebar);
+  --shadow-card: var(--elevation-card);
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --text-label: 0.75rem; /* 12px floor for small/label text */
+  --text-kpi: 2.25rem; /* text-4xl equivalent for KPI numbers */
+  --text-kpi--line-height: 2.5rem;
   --font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -99,7 +146,9 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
   }
   .font-mono {
     font-variant-numeric: tabular-nums;
@@ -108,42 +157,42 @@
 
 @layer components {
   .ar-label {
-    @apply text-[11px] font-semibold tracking-[.06em] text-muted-foreground uppercase;
+    @apply text-label font-semibold tracking-[.06em] text-muted-foreground uppercase;
   }
 
   /* Status pills: tinted background, colored text, dot. */
   .ar-pill {
-    @apply inline-flex items-center gap-1.5 rounded-full px-[9px] py-0.5 text-[11.5px] leading-[1.7] font-semibold whitespace-nowrap;
+    @apply inline-flex items-center gap-1.5 rounded-full px-[9px] py-0.5 text-label leading-[1.7] font-semibold whitespace-nowrap;
   }
   .ar-pill > .ar-dot {
     @apply size-1.5 flex-none rounded-full bg-current;
   }
   .ar-pill.ok {
     color: var(--success);
-    background: color-mix(in srgb, var(--success) 14%, transparent);
+    background: color-mix(in srgb, var(--success) 10%, transparent);
   }
   .ar-pill.warn {
     color: var(--warning);
-    background: color-mix(in srgb, var(--warning) 15%, transparent);
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
   }
   .ar-pill.bad {
     color: var(--destructive);
-    background: color-mix(in srgb, var(--destructive) 13%, transparent);
+    background: color-mix(in srgb, var(--destructive) 9%, transparent);
   }
   .ar-pill.info {
     color: var(--info);
-    background: color-mix(in srgb, var(--info) 13%, transparent);
+    background: color-mix(in srgb, var(--info) 9%, transparent);
   }
   .ar-pill.mute {
     color: var(--muted-foreground);
-    background: color-mix(in srgb, var(--muted-foreground) 12%, transparent);
+    background: color-mix(in srgb, var(--muted-foreground) 9%, transparent);
   }
   .ar-pill.run > .ar-dot {
     animation: ar-pulse 1.4s ease-in-out infinite;
   }
 
   .ar-tag {
-    @apply ml-1.5 rounded-[5px] border border-warning px-[5px] font-mono text-[10.5px] text-warning;
+    @apply ml-1.5 rounded-[5px] border border-warning px-[5px] font-mono text-label text-warning;
   }
 }
 
@@ -158,7 +207,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ar-pill.run > .ar-dot {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

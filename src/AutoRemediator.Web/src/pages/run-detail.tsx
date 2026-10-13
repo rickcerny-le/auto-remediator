@@ -8,6 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { DataTable } from '@/components/data-table'
 import { columnHelper } from '@/lib/table'
 import { Pill } from '@/components/pill'
+import { PageHeader } from '@/components/page-header'
 import { RunStatus } from '@/components/run-cells'
 import { api, ApiError, errorMessage } from '@/lib/api'
 import { formatDate, location, plural } from '@/lib/format'
@@ -41,9 +42,9 @@ const updateColumns = upd.columns([
 
 function Section({ title, badge, link, children, testId }: { title: string; badge?: ReactNode; link?: ReactNode; children: ReactNode; testId?: string }) {
   return (
-    <Card className="mb-4 gap-2 p-4" data-testid={testId}>
+    <Card className="mb-6 gap-3 p-5" data-testid={testId}>
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="font-semibold">{title}</h2>
+        <h2 className="text-base font-semibold">{title}</h2>
         {badge}
         <div className="flex-1" />
         {link}
@@ -58,6 +59,7 @@ function ApiLink({ href, testId, children }: { href: string; testId: string; chi
   return (
     <a href={href} target="_blank" rel="noreferrer" className="font-mono text-sm text-info hover:underline" data-testid={testId}>
       {children}
+      <span className="sr-only"> (opens in a new tab)</span>
     </a>
   )
 }
@@ -118,10 +120,14 @@ export function RunDetailPage() {
       </div>
 
       {commandMessage !== null && (
-        <Alert variant="info" className="mb-4" data-testid="review-command-message">
+        <Alert variant="info" role="status" className="mb-4" data-testid="review-command-message">
           <AlertDescription>{commandMessage}</AlertDescription>
         </Alert>
       )}
+
+      <PageHeader title={run?.repositorySlug ?? 'Run detail'} titleClassName={run ? 'font-mono text-xl font-medium' : undefined}>
+        {run && <RunStatus status={run.status} />}
+      </PageHeader>
 
       {error !== undefined ? (
         <Alert variant="warning" data-testid="run-error">
@@ -130,21 +136,17 @@ export function RunDetailPage() {
           </AlertDescription>
         </Alert>
       ) : run === null ? (
-        <p className="italic">Loading…</p>
+        <p className="italic" role="status">Loading…</p>
       ) : (
         <>
-          <Card className="mb-4 gap-1 p-4" data-testid="run-header">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-mono text-xl font-medium">{run.repositorySlug}</h1>
-              <RunStatus status={run.status} />
-            </div>
-            <p className="text-sm">
+          <Card className="mb-6 gap-1 p-5" data-testid="run-header">
+            <p>
               Started: {formatDate(run.startedAtUtc)}
               {run.finishedAtUtc && ` · Finished: ${formatDate(run.finishedAtUtc)}`}
             </p>
             {run.pullRequestUrl && (
-              <a href={run.pullRequestUrl} target="_blank" rel="noreferrer" className="text-sm text-info hover:underline" data-testid="run-pr-link">
-                Pull request
+              <a href={run.pullRequestUrl} target="_blank" rel="noreferrer" className="text-info hover:underline" data-testid="run-pr-link">
+                Pull request<span className="sr-only"> (opens in a new tab)</span>
               </a>
             )}
             {run.error && (
@@ -184,7 +186,7 @@ export function RunDetailPage() {
               ) : (
                 <>
                   <p className="text-sm">
-                    Verified <span className="font-mono">{formatDate(proposal.verifiedAtUtc)}</span> against base commit{' '}
+                    Verified {formatDate(proposal.verifiedAtUtc)} against base commit{' '}
                     <span className="font-mono">{proposal.baseCommitId.slice(0, 8)}</span> over {plural(proposal.attempts, 'attempt')}.{' '}
                     {proposal.transcriptUrl && (
                       <ApiLink href={proposal.transcriptUrl} testId="proposal-transcript-link">
@@ -194,7 +196,7 @@ export function RunDetailPage() {
                   </p>
 
                   {proposal.provokingDiagnostics.length > 0 && (
-                    <DataTable columns={diagnosticColumns} data={proposal.provokingDiagnostics} testId="proposal-diagnostics" className="mb-2" />
+                    <DataTable columns={diagnosticColumns} data={proposal.provokingDiagnostics} caption="Diagnostics that prompted the proposal" testId="proposal-diagnostics" className="mb-2" />
                   )}
 
                   <Accordion type="multiple" defaultValue={proposal.files.map((f) => f.path)} className="rounded-md border px-4">
@@ -203,14 +205,14 @@ export function RunDetailPage() {
                         <AccordionTrigger className="font-mono">{`${file.origin}: ${file.path}`}</AccordionTrigger>
                         <AccordionContent className="flex flex-wrap gap-3">
                           <div className="min-w-[280px] flex-1">
-                            <div className="text-xs text-muted-foreground">Before</div>
-                            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-xs whitespace-pre-wrap">
+                            <div className="text-label text-muted-foreground">Before</div>
+                            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-label whitespace-pre-wrap">
                               {file.originalContent ?? '(file did not exist)'}
                             </pre>
                           </div>
                           <div className="min-w-[280px] flex-1">
-                            <div className="text-xs text-muted-foreground">After</div>
-                            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-xs whitespace-pre-wrap">{file.newContent}</pre>
+                            <div className="text-label text-muted-foreground">After</div>
+                            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-label whitespace-pre-wrap">{file.newContent}</pre>
                           </div>
                         </AccordionContent>
                       </AccordionItem>
@@ -280,9 +282,9 @@ export function RunDetailPage() {
               )}
               {run.verification.diagnostics.length > 0 && (
                 <>
-                  <DataTable columns={diagnosticColumns} data={run.verification.diagnostics} testId="verification-diagnostics" />
+                  <DataTable columns={diagnosticColumns} data={run.verification.diagnostics} caption="Verification diagnostics" testId="verification-diagnostics" />
                   {/* The run record keeps a bounded set of diagnostics; the log always has them all. */}
-                  <p className="text-xs text-muted-foreground" data-testid="verification-diagnostics-note">
+                  <p className="text-label text-muted-foreground" data-testid="verification-diagnostics-note">
                     A capped set of diagnostics is kept on the run — the full log has every one.
                   </p>
                 </>
@@ -290,8 +292,9 @@ export function RunDetailPage() {
             </Section>
           )}
 
+          <h2 className="mb-3 text-base font-semibold">Updates</h2>
           <Card className="py-0">
-            <DataTable columns={updateColumns} data={run.updates} empty="No updates in this run." testId="run-updates" />
+            <DataTable columns={updateColumns} data={run.updates} caption="Updates in this run" empty="No updates in this run." testId="run-updates" />
           </Card>
         </>
       )}

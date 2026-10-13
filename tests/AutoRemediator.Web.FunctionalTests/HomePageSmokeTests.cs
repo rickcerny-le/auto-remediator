@@ -24,6 +24,7 @@ public class HomePageSmokeTests
         var context = await browser.NewContextAsync(new BrowserNewContextOptions
         {
             IgnoreHTTPSErrors = true,
+            ColorScheme = ColorScheme.Dark,
             ViewportSize = new ViewportSize { Width = 1440, Height = 900 },
         });
         var page = await context.NewPageAsync();
@@ -35,7 +36,7 @@ public class HomePageSmokeTests
         await Assertions.Expect(page.GetByText("Managed repos").First).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByTestId("nav")).ToBeVisibleAsync();
 
-        // Dark by default; the toggle switches to light.
+        // Theme defaults to system (emulated dark); the toggle cycles system -> light -> dark.
         var html = page.Locator("html");
         await Assertions.Expect(html).ToHaveClassAsync(new System.Text.RegularExpressions.Regex(@"\bdark\b"));
         await page.GetByTestId("theme-toggle").ClickAsync();
