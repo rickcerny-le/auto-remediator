@@ -7,7 +7,7 @@ using AutoRemediator.Domain;
 namespace AutoRemediator.Infrastructure.AzureDevOps;
 
 /// <summary>
-/// Read-only Azure DevOps REST client (api-version=7.1). The <see cref="HttpClient"/> is
+/// Azure DevOps REST client (api-version=7.1) — reads manifests/archives, pushes branches, and opens PRs. The <see cref="HttpClient"/> is
 /// configured with the organization base address and PAT Basic auth by the DI registration.
 /// </summary>
 internal sealed class AzureDevOpsClient(HttpClient httpClient) : IAzureDevOpsClient

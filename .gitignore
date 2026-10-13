@@ -483,11 +483,9 @@ $RECYCLE.BIN/
 
 nuget.config
 
-/specs
-.specify/
 
 # Agent/editor skills and subagents are a per-developer choice, not a repo
-# artifact — see README.md's "Recommended tooling" section.
+# artifact — see README.md's "Recommended agent skills" section.
 .claude/skills/
 .claude/agents/
 .agents/skills/

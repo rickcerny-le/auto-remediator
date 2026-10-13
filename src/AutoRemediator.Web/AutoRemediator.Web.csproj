@@ -9,8 +9,6 @@
 
   <ItemGroup>
     <PackageReference Include="MudBlazor" Version="9.7.0" />
-    <ProjectReference Include="..\AutoRemediator.Web.Client\AutoRemediator.Web.Client.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.8" />
   </ItemGroup>
 
   <ItemGroup>

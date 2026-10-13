@@ -1,6 +1,5 @@
 {
   "appHost": {
-    "language": "csharp",
-    "path": "./src/AutoRemediator.AppHost.cs"
+    "path": "./src/AutoRemediator.AppHost/AutoRemediator.AppHost.csproj"
   }
 }

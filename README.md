@@ -5,10 +5,6 @@ pull requests, and runs an AI loop (Microsoft Agent Framework + Azure AI Foundry
 address breaking changes the updates introduce. Runs are timed, queued, and processed
 by horizontally scalable workers. A Blazor web UI configures the tool and shows status.
 
-> This repository is currently a **scaffold** — the projects, boundaries, orchestration,
-> and test topology are in place; remediation, Azure DevOps, and AI-agent logic land in
-> later changes.
-
 ## Solution layout
 
 ```
@@ -17,8 +13,7 @@ src/
   AutoRemediator.AppHost            # .NET Aspire orchestrator (composes everything)
   AutoRemediator.ServiceDefaults    # OpenTelemetry, health checks, service discovery
   AutoRemediator.Api                # Minimal API, vertical slice (endpoints -> handlers, no mediator)
-  AutoRemediator.Web                # Blazor Web App (server)  — InteractiveAuto
-  AutoRemediator.Web.Client         # Blazor Web App (WASM client)
+  AutoRemediator.Web                # Blazor Web App (Interactive Server, MudBlazor)
   AutoRemediator.Worker.Scheduler   # Run-once trigger -> enqueues remediation runs
   AutoRemediator.Worker.Remediation # Queue consumer -> runs the remediation/AI loop
   AutoRemediator.Agents             # Microsoft Agent Framework agents (Azure AI Foundry)
@@ -100,8 +95,8 @@ should not be inferred from the local shape:
 | `Worker.Scheduler` | Scheduled **Azure Container Apps Job** | Cron schedule (in the Job) | Runs once: enumerate enrolled repos, enqueue one `RemediationRunRequested` each, then **exit**. No in-process timer. A dev-only loop (`Scheduler:DevLoopEnabled`) can re-trigger it locally. |
 | `Worker.Remediation` | Event-driven **Azure Container Apps Job** | Service Bus queue depth (KEDA) | Scales out per queued message, processes the run via the agent, scales to zero when idle. |
 
-The ACA Job definitions and KEDA/cron settings themselves are deferred to a later
-deployment/IaC change.
+The ACA Job definitions and KEDA/cron settings live in Terraform — see
+[`infra/terraform`](infra/terraform/README.md).
 
 ## The AI remediation loop — local vs. deployed
 
