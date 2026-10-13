@@ -40,7 +40,7 @@ public class ReviewGateTests
         ],
         [new VerificationDiagnostic("CS1061", "'Client' has no member 'SubmitAsync'", "src/App/Program.cs", 3, 42)],
         attempts: 2,
-        transcriptReference: null);
+        transcriptReference: "transcripts/review-gate-e2e.txt");
 
     /// <summary>Seeds a held run and its proposal, skipping the test when Azurite is not reachable.</summary>
     private static async Task<Guid?> SeedHeldRunAsync(ServiceProvider provider, string? reviewNote = null)
@@ -100,6 +100,11 @@ public class ReviewGateTests
         await Assertions.Expect(page.GetByText("new source")).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByText("old source")).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByTestId("proposal-diagnostics")).ToContainTextAsync("CS1061");
+        await Assertions.Expect(page.GetByTestId("proposal-file")).ToHaveCountAsync(2);
+
+        // Artifact links are same-origin relative /api URLs, never the internal service-discovery address.
+        await Assertions.Expect(page.GetByTestId("proposal-transcript-link"))
+            .ToHaveAttributeAsync("href", $"/api/runs/{runId}/remediation-transcript");
 
         await Assertions.Expect(page.GetByTestId("approve-button")).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByTestId("retry-button")).ToBeVisibleAsync();

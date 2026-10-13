@@ -31,8 +31,10 @@ var api = builder.AddProject<Projects.AutoRemediator_Api>("api")
     .WaitFor(storage)
     .WaitFor(serviceBus);
 
-// --- Web UI (Blazor Web App, Auto) ---
-builder.AddProject<Projects.AutoRemediator_Web>("web")
+// --- Web UI (React SPA on Vite) ---
+// The Vite dev server proxies /api to the API's injected service-discovery URL, so the browser
+// sees one origin, as it does through nginx when deployed. npm install runs before it starts.
+builder.AddViteApp("web", "../AutoRemediator.Web")
     .WithReference(api)
     .WaitFor(api);
 

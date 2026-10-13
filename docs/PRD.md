@@ -112,7 +112,7 @@ one guarantees, distilled from specs that have since been retired.
 ### 6.1 Configuration & targeting
 - Persists an explicit, enable/disable-able list of managed repositories (org/project/name +
   target branch) and global targeting settings (package patterns, excludes, feeds, policy) in
-  Table Storage, editable via API and a Blazor page.
+  Table Storage, editable via API and the web app's Configuration page.
 
 ### 6.2 Azure DevOps connectivity
 - One authenticated client (PAT from Key Vault in Azure, user-secrets locally) handles reads
@@ -209,7 +209,7 @@ one guarantees, distilled from specs that have since been retired.
   the app shell counting runs that need a person — `AwaitingReview` and unexpected `Failed` — with
   a list linking to each run. Held repositories show how long they've been held, so a stale hold
   is visible rather than silent. No email/Teams/Slack delivery.
-- **Status:** feed, detail, and a "Held for review" panel on Home exist (Blazor); the app-shell
+- **Status:** feed, detail, and a "Held for review" panel on Home exist; the app-shell
   indicator and held-duration are *not built*.
 
 ### 6.14 Web UI foundation
@@ -221,9 +221,10 @@ one guarantees, distilled from specs that have since been retired.
 - Composed by the Aspire AppHost for local development like every other service; deployed as
   static assets from its own `web` Container App (nginx), which also reverse-proxies `/api` to
   the API so the browser sees a single origin (no CORS) — see §6.18.
-- **Status:** *not built.* The current UI is Blazor Server + MudBlazor (`AutoRemediator.Web`);
-  it remains until the React app reaches parity, then is removed along with its Playwright
-  selectors (the functional suite is retargeted at the SPA).
+- **Status:** *built.* `AutoRemediator.Web` is the React SPA; the Blazor Server + MudBlazor app
+  it replaced has been removed, and the Playwright functional suite targets the SPA's
+  `data-testid`s. Authentication (§6.17) is not wired in yet; the API client has a seam for a
+  bearer token.
 
 ### 6.15 Platform: service orchestration
 - A .NET Aspire AppHost composes every service; Storage/Service Bus run as local emulators; a
@@ -339,9 +340,9 @@ the requirement it became; open items are deliberately deferred.
 - **Base mismatch in planning:** manifests are read from the target branch, but edits are applied
   over the `autoremediator/dependency-updates` head when that branch exists
   (`RemediationRunner.cs:71`). Planning and applying must use the same base.
-- **Broken log/transcript links:** `RunDetail.razor` builds browser links from the internal
-  `https+http://api` service-discovery address. (Moot after the React rewrite, but the SPA must
-  use relative `/api` links.)
+- ~~**Broken log/transcript links:**~~ *Fixed with the React SPA (§6.14).* `RunDetail.razor` built
+  browser links from the internal `https+http://api` service-discovery address; the SPA uses the
+  API's relative `/api` links as-is, served from the same origin.
 - **"Open PRs" KPI is wrong:** counts runs that have a PR URL — not open PRs, and repeat runs on
   one PR are counted repeatedly. Conflicts with the "run ends at the PR" non-goal; replace with
   a metric the system actually knows (e.g. "runs that opened/updated a PR, last 7 days").

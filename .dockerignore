@@ -3,6 +3,8 @@
 **/bin/
 **/obj/
 **/out/
+**/node_modules/
+**/dist/
 .git/
 .github/
 .azuredevops/

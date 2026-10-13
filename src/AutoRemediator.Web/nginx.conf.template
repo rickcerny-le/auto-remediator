@@ -1,0 +1,23 @@
+# Rendered by the nginx image's envsubst step at container start (/etc/nginx/templates):
+# ${API_URL} is the API's base URL, e.g. https://ca-...-api.<env>.azurecontainerapps.io (no trailing slash).
+server {
+    listen 8080;
+    root /usr/share/nginx/html;
+
+    # Same-origin API: the browser calls /api/..., nginx forwards it unchanged to the API.
+    location /api/ {
+        proxy_pass ${API_URL};
+        proxy_ssl_server_name on;
+    }
+
+    # Vite fingerprints asset file names, so they can be cached for good.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # Client-side routes (/runs/<id>, ...) all serve the SPA shell.
+    location / {
+        try_files $uri /index.html;
+        add_header Cache-Control "no-cache";
+    }
+}
