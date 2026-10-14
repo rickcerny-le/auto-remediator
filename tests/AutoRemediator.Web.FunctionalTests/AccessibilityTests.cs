@@ -102,6 +102,42 @@ public class AccessibilityTests
         await AssertNoViolationsAsync(page, $"{name} ({scheme})");
     }
 
+    [Theory]
+    [InlineData("light")]
+    [InlineData("dark")]
+    public async Task Run_detail_with_pull_request_diff_has_no_wcag_a_or_aa_violations(string scheme)
+    {
+        Assert.SkipWhen(
+            string.IsNullOrWhiteSpace(BaseUrl),
+            "Set WEB_BASE_URL to a running Web app to run the accessibility tests.");
+        var baseUrl = BaseUrl!.TrimEnd('/');
+
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            IgnoreHTTPSErrors = true,
+            ColorScheme = scheme == "dark" ? ColorScheme.Dark : ColorScheme.Light,
+            ViewportSize = new ViewportSize { Width = 1280, Height = 900 },
+        });
+        var page = await context.NewPageAsync();
+
+        var runId = await PullRequestDiffTests.FindRunWithDiffAsync(page, baseUrl);
+        Assert.SkipWhen(runId is null, "No run has a pull request diff (needs local repository mode and a Completed run).");
+
+        await page.GotoAsync($"{baseUrl}/runs/{runId}");
+        await WaitForPageAsync(page);
+
+        // The diff loads separately from the run, with its own text, so WaitForPageAsync does not cover it.
+        var section = page.GetByTestId("run-pr-diff");
+        await Assertions.Expect(section).ToBeVisibleAsync();
+        await Assertions.Expect(section.GetByText("Loading pull request changes…")).ToHaveCountAsync(0);
+        await Assertions.Expect(section.GetByTestId("pr-diff-file").First).ToBeVisibleAsync();
+        await SettleAsync(page);
+
+        await AssertNoViolationsAsync(page, $"run-detail-pr-diff ({scheme})");
+    }
+
     [Fact]
     public async Task Mobile_navigation_drawer_has_no_wcag_a_or_aa_violations()
     {

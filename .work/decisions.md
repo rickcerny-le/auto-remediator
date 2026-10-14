@@ -12,3 +12,20 @@ Append-only.
 - **Dark outline buttons are transparent** (was `bg-input/30`) after axe found a Discard contrast failure; affects every outline button in dark mode.
 - **Table scroll regions are always focusable** (`role="region"`, `tabIndex=0`); conditional focus would need overflow detection.
 - **Scope kept small**; charts, logo, density toggle, i18n, extra animation deferred.
+
+## 2026-10-13 · 002-local-repo-mode
+- **Local PR = idempotent JSON record under `.local/prs` with a `file://` URL**; push = temporary worktree plus compare-and-swap ref update. The git binary is allowed only in local mode (the Azure DevOps path stays git-free).
+- **Local mode is selected by `AzureDevOps:Mode=Local`** in `AddInfrastructure`; the default registration is unchanged.
+- **Scenario generator is a committed PowerShell 7 script under `tools/local-scenarios`**, writing to the gitignored `.local/`, absolute feed paths computed at generation time, NuGet cache purged for its own ids.
+- **Scenarios run under global settings profiles** (baseline / patch / major / prerelease); per-repo settings are out of scope.
+- **Missing branch / unknown repo ending as `NoUpdates` is logged as a known defect in the PRD** (user decision). Local mode copies the behaviour until it is fixed.
+- **Ollama is the model provider going forward** (user decision), replacing Foundry. Prior art: `feat/local-remediation` (commit 5071d9f), copied from rather than merged.
+- **With `Model:Enabled=false` remediation is non-agentic**: the loop falls back to `UnavailableRemediationAgent`, and a build that fails after the bump ends the run as `VerificationFailed` with no PR (existing behaviour, user-confirmed intent).
+- **Held-review seeder runs as an explicit-start Aspire resource, registered only when `LocalRepos:Enabled` is on** (user decision, 2026-10-13). Aspire injects the Azurite connection strings, so no manual copying. Replaces the env-var approach assumed in task 08.
+- **PR diff limits accepted:** full before/after per file, 256 KB per side, 200 files, binaries listed not shown; PR record refreshes base/head on every push.
+- **Deployed model setup (`infra/terraform` Foundry) is left untouched** and revisited in the next feature.
+- **Every interactive element must use the shared `focusRing`** (`outline-hidden` + `focus-visible:outline-solid ...`). `outline-none` stays only on programmatic-focus targets (`main`, page `h1`). Reason: in Tailwind v4 `outline-none` sets `--tw-outline-style: none` which `outline-2` reads, so no ring rendered anywhere after feature 001; axe cannot detect it, so `FocusVisibleTests` checks computed styles in a real browser.
+- **Held-review seeder** is `tools/local-scenarios/HeldRunSeeder`, resource `held-run-seeder` (explicit start, local mode only), as decided.
+- **PR diff** exposed as `pullRequestDiffUrl` + `GET /api/runs/{id}/pull-request-diff`, local mode only; `PullRequestChangeKind` enum in Infrastructure, `ChangeKind` string in the DTO.
+- **No Aspire version bump** for Ollama; only `Microsoft.Extensions.Options.ConfigurationExtensions` raised to 10.0.11 in Agents.
+- **Open follow-up:** `The_real_model_call_reports_token_usage` fails against Ollama (no usage reported), so the token budget may not be enforced under Ollama.

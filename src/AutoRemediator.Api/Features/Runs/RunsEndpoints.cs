@@ -3,6 +3,7 @@ using AutoRemediator.Contracts;
 using AutoRemediator.Contracts.Dtos;
 using AutoRemediator.Contracts.Messages;
 using AutoRemediator.Domain;
+using AutoRemediator.Infrastructure.AzureDevOps;
 using AutoRemediator.Infrastructure.Configuration;
 using AutoRemediator.Infrastructure.Messaging;
 using AutoRemediator.Infrastructure.Review;
@@ -32,10 +33,25 @@ public sealed class RunsEndpoints : IFeatureEndpoint
             return Results.Ok(runs.Select(ToSummary));
         });
 
-        group.MapGet("/{id:guid}", async (Guid id, IRemediationRunStore store, CancellationToken ct) =>
+        group.MapGet("/{id:guid}", async (Guid id, IRemediationRunStore store, IPullRequestDiffReader diffReader, CancellationToken ct) =>
         {
             var run = await store.GetAsync(id, ct);
-            return run is null ? Results.NotFound() : Results.Ok(ToDetail(run));
+            return run is null ? Results.NotFound() : Results.Ok(ToDetail(run, diffReader));
+        });
+
+        // Read-only: computes what the run's local pull request changes. Not found when there is no pull
+        // request, no reader (Azure DevOps mode) or nothing readable behind the link.
+        group.MapGet("/{id:guid}/pull-request-diff", async (
+            Guid id, IRemediationRunStore store, IPullRequestDiffReader diffReader, CancellationToken ct) =>
+        {
+            var run = await store.GetAsync(id, ct);
+            if (run?.PullRequestUrl is not { } url || !diffReader.IsAvailable)
+            {
+                return Results.NotFound();
+            }
+
+            var diff = await diffReader.GetDiffAsync(url, ct);
+            return diff is null ? Results.NotFound() : Results.Ok(ToDiff(diff));
         });
 
         group.MapGet("/{id:guid}/verification-log", async (
@@ -109,13 +125,22 @@ public sealed class RunsEndpoints : IFeatureEndpoint
     private static RunSummaryDto ToSummary(RemediationRun r) =>
         new(r.Id, r.RepositorySlug, r.Status.ToString(), r.StartedAtUtc, r.FinishedAtUtc, r.Updates.Count, r.PullRequestUrl);
 
-    private static RunDetailDto ToDetail(RemediationRun r) =>
+    private static RunDetailDto ToDetail(RemediationRun r, IPullRequestDiffReader diffReader) =>
         new(r.Id, r.RepositorySlug, r.Status.ToString(), r.StartedAtUtc, r.FinishedAtUtc, r.PullRequestUrl, r.Error,
             r.Updates.Select(u => new RunUpdateDto(u.PackageId, u.FromVersion, u.ToVersion, u.Kind.ToString(), u.BeyondPolicy)).ToList(),
             ToVerification(r),
             ToRemediation(r),
             r.ProposalReference is null ? null : $"/api/runs/{r.Id}/proposal",
-            r.ReviewNote);
+            r.ReviewNote,
+            diffReader.IsAvailable && r.PullRequestUrl is not null ? $"/api/runs/{r.Id}/pull-request-diff" : null);
+
+    private static PullRequestDiffDto ToDiff(PullRequestDiff d) =>
+        new(
+            d.SourceBranch,
+            d.TargetBranch,
+            d.BaseCommitId,
+            d.HeadCommitId,
+            d.Files.Select(f => new PullRequestDiffFileDto(f.Path, f.ChangeKind.ToString(), f.OriginalContent, f.NewContent, f.IsBinary, f.IsTruncated)).ToList());
 
     private static ChangeProposalDto ToProposal(RemediationRun r, ChangeProposal p) =>
         new(

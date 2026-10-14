@@ -88,6 +88,57 @@ public class InfrastructureExtensionsTests
     }
 
     [Fact]
+    public async Task Local_mode_resolves_the_local_repository_client_without_a_pat()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
+        builder.Configuration["ConnectionStrings:blobs"] = "UseDevelopmentStorage=true";
+        builder.Configuration["ConnectionStrings:servicebus"] =
+            "Endpoint=sb://localhost/;SharedAccessKeyName=key;SharedAccessKey=a2V5a2V5a2V5a2V5a2V5a2V5";
+        builder.Configuration["AzureDevOps:Mode"] = "local";
+        builder.Configuration["AzureDevOps:LocalRoot"] = Path.Combine(Path.GetTempPath(), "lrc-di", "repos");
+
+        builder.AddInfrastructure();
+
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        Assert.Equal("LocalRepositoryClient", provider.GetRequiredService<IAzureDevOpsClient>().GetType().Name);
+        Assert.True(provider.GetRequiredService<IPullRequestDiffReader>().IsAvailable);
+    }
+
+    [Fact]
+    public async Task Default_mode_resolves_the_azure_devops_client()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
+        builder.Configuration["ConnectionStrings:blobs"] = "UseDevelopmentStorage=true";
+        builder.Configuration["ConnectionStrings:servicebus"] =
+            "Endpoint=sb://localhost/;SharedAccessKeyName=key;SharedAccessKey=a2V5a2V5a2V5a2V5a2V5a2V5";
+
+        builder.AddInfrastructure();
+
+        await using var provider = builder.Services.BuildServiceProvider();
+
+        Assert.Equal("AzureDevOpsClient", provider.GetRequiredService<IAzureDevOpsClient>().GetType().Name);
+        Assert.False(provider.GetRequiredService<IPullRequestDiffReader>().IsAvailable);
+    }
+
+    [Fact]
+    public void Local_mode_without_a_root_fails_naming_the_setting()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
+        builder.Configuration["ConnectionStrings:blobs"] = "UseDevelopmentStorage=true";
+        builder.Configuration["ConnectionStrings:servicebus"] =
+            "Endpoint=sb://localhost/;SharedAccessKeyName=key;SharedAccessKey=a2V5a2V5a2V5a2V5a2V5a2V5";
+        builder.Configuration["AzureDevOps:Mode"] = "Local";
+
+        var ex = Assert.Throws<InvalidOperationException>(() => builder.AddInfrastructure());
+
+        Assert.Contains("AzureDevOps:LocalRoot", ex.Message);
+    }
+
+    [Fact]
     public async Task A_missing_connection_value_is_reported_with_its_name()
     {
         var builder = Host.CreateApplicationBuilder();

@@ -200,6 +200,20 @@ public class MafRemediationAgentTests
     }
 
     [Fact]
+    public async Task A_model_that_cannot_be_reached_ends_the_attempt_without_failing_the_run()
+    {
+        var client = new FakeChatClient("""{"edits":[]}""")
+        {
+            Failure = new HttpRequestException("Response status code does not indicate success: 404 (Not Found)."),
+        };
+
+        var proposal = await Agent(client).ProposeAsync(Attempt(), TestContext.Current.CancellationToken);
+
+        Assert.False(proposal.HasEdits);
+        Assert.Contains("could not be reached", proposal.Summary);
+    }
+
+    [Fact]
     public async Task Caller_cancellation_propagates()
     {
         var client = new FakeChatClient("""{"edits":[]}""") { Delay = TimeSpan.FromSeconds(30) };
@@ -225,6 +239,7 @@ public class MafRemediationAgentTests
         public string? LastUserPrompt { get; private set; }
         public long TotalTokens { get; set; }
         public TimeSpan Delay { get; set; }
+        public Exception? Failure { get; set; }
 
         public async Task<ChatResponse> GetResponseAsync(
             IEnumerable<ChatMessage> messages,
@@ -232,6 +247,11 @@ public class MafRemediationAgentTests
             CancellationToken cancellationToken = default)
         {
             Calls++;
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+
             var list = messages.ToList();
             LastSystemPrompt = list.FirstOrDefault(m => m.Role == ChatRole.System)?.Text;
             LastUserPrompt = list.FirstOrDefault(m => m.Role == ChatRole.User)?.Text;

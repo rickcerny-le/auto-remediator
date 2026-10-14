@@ -5,7 +5,7 @@ namespace AutoRemediator.Agents;
 ///
 /// The model endpoint and deployment are deliberately absent: they arrive as an Aspire
 /// connection reference resolved by the chat-client integration, so the same code runs
-/// against a local model in development and the deployed Foundry account in Azure.
+/// against a local model in development and the deployed model account in Azure.
 /// </summary>
 public sealed class AgentsOptions
 {

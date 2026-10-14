@@ -52,7 +52,7 @@ public class AgentsExtensionsTests
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:chat"] =
-            "Endpoint=https://example-foundry.services.ai.azure.com/;Key=abc123;DeploymentName=phi-4";
+            "Endpoint=http://localhost:11434;Model=phi4";
 
         builder.AddAgents();
 

@@ -3,6 +3,7 @@ import type {
   DependencyMap,
   ManagedRepository,
   ManagedRepositoryInput,
+  PullRequestDiff,
   ReviewCommand,
   RunDetail,
   RunSummary,
@@ -53,6 +54,7 @@ export const api = {
     json<RunSummary[]>(status ? `/api/runs?status=${encodeURIComponent(status)}` : '/api/runs'),
   run: (id: string) => json<RunDetail>(`/api/runs/${id}`),
   proposal: (url: string) => json<ChangeProposal>(url),
+  pullRequestDiff: (url: string) => json<PullRequestDiff>(url),
   /** Returns the HTTP status: 202 accepted, 409 the run already moved on. */
   review: async (id: string, command: ReviewCommand) =>
     (await send(`/api/runs/${id}/review/${command}`, { method: 'POST' })).status,

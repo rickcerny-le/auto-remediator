@@ -118,6 +118,9 @@ one guarantees, distilled from specs that have since been retired.
 - One authenticated client (PAT from Key Vault in Azure, user-secrets locally) handles reads
   (manifest discovery/content, repo verification, full-tree-as-zip download) and writes (push to
   branch, create-or-find PR) entirely over REST — no `git` clone anywhere in the system.
+- A local repository mode (`AzureDevOps:Mode=Local`; needs the `git` binary; development and
+  testing only, see `docs/local-testing.md`) swaps this client for plain git repositories on disk
+  and is exempt from the no-clone rule above; the Azure DevOps path stays REST-only.
 
 ### 6.3 Dependency analysis
 - Parses `Directory.Packages.props` and `*.csproj`, matches package ids against configured
@@ -355,6 +358,11 @@ the requirement it became; open items are deliberately deferred.
   each page load; it should come from the latest run's analysis (or a cached snapshot).
 - **Flaky API test suite:** `AutoRemediator.Api.Tests` intermittently times out building the
   host (`WebApplicationFactory`, 5-minute host-factory timeout) — 3–5 of 30 tests fail on `main`.
+- **Missing branch / unknown repository ends as `NoUpdates`:** when the target branch or the
+  repository does not exist, the Azure DevOps client reports no manifests and the run finishes
+  `NoUpdates`, indistinguishable from a healthy repo with nothing to bump. A misconfigured
+  enrollment should surface as a failed run with a clear reason. Local repository mode
+  (feature 002) deliberately copies this behaviour until it is fixed.
 
 ## 9. Future directions
 

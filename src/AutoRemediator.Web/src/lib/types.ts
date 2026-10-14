@@ -90,6 +90,8 @@ export interface RunDetail {
   remediation: RunRemediation | null
   proposalUrl: string | null
   reviewNote: string | null
+  /** Present only in local repository mode, when the run has a pull request. */
+  pullRequestDiffUrl: string | null
 }
 
 export interface ProposedFile {
@@ -110,6 +112,23 @@ export interface ChangeProposal {
   reviewCommandCount: number
   files: ProposedFile[]
   provokingDiagnostics: RunDiagnostic[]
+}
+
+export interface PullRequestDiffFile {
+  path: string
+  changeKind: 'Added' | 'Modified' | 'Deleted'
+  originalContent: string | null
+  newContent: string | null
+  isBinary: boolean
+  isTruncated: boolean
+}
+
+export interface PullRequestDiff {
+  sourceBranch: string
+  targetBranch: string
+  baseCommitId: string
+  headCommitId: string
+  files: PullRequestDiffFile[]
 }
 
 export type ReviewCommand = 'approve' | 'rebuild' | 'retry' | 'discard'
