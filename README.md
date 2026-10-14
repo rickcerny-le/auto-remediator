@@ -151,7 +151,7 @@ should not be inferred from the local shape:
 
 | Worker | Deployed as | Trigger | Behavior |
 | --- | --- | --- | --- |
-| `Worker.Scheduler` | Scheduled **Azure Container Apps Job** | Cron schedule (in the Job) | Runs once: enumerate enrolled repos, enqueue one `RemediationRunRequested` each, then **exit**. No in-process timer. A dev-only loop (`Scheduler:DevLoopEnabled`) can re-trigger it locally. |
+| `Worker.Scheduler` | Scheduled **Azure Container Apps Job** | Cron tick every 15 minutes (in the Job) | Runs once per tick: enumerate enabled repos, enqueue one `RemediationRunRequested` only for each repo that is due (default cadence daily at 00:00 UTC, or the repo's or global default schedule), at most one run per repo per tick, with schedule state in the `schedulestate` table, then **exit**. No in-process timer. A dev-only loop (`Scheduler:DevLoopEnabled`) can re-trigger it locally. |
 | `Worker.Remediation` | Event-driven **Azure Container Apps Job** | Service Bus queue depth (KEDA) | Scales out per queued message, processes the run via the agent, scales to zero when idle. |
 
 The ACA Job definitions and KEDA/cron settings live in Terraform — see

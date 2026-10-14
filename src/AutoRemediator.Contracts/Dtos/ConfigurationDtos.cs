@@ -60,4 +60,7 @@ public sealed record EffectiveSettingsDto(
     EffectiveValueDto Strategy,
     EffectiveValueDto AllowPrerelease,
     EffectiveValueDto Schedule,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    DateTimeOffset? LastScheduledAtUtc = null,
+    IReadOnlyList<DateTimeOffset>? NextScheduledRunsUtc = null,
+    bool? DueAtNextTick = null);

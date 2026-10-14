@@ -14,6 +14,7 @@ import { PageHeader } from '@/components/page-header'
 import { columnHelper } from '@/lib/table'
 import type { Tone } from '@/lib/status'
 import { api, ApiError, errorMessage, readFieldErrors } from '@/lib/api'
+import { formatDate, formatUtc } from '@/lib/format'
 import { BUILT_IN_SCHEDULE, describedBy, join, split } from '@/lib/form'
 import type { EffectiveListItem, EffectiveSettings, ManagedRepository, RepositorySettings, SettingSource, TargetingSettings } from '@/lib/types'
 import { useLoad, useRunNow, useTitle } from '@/hooks'
@@ -53,8 +54,11 @@ function SourcePill({ source, testId }: { source: SettingSource; testId?: string
 type EffectiveRow =
   | { key: string; setting: string; kind: 'scalar'; value: string; source: SettingSource }
   | { key: string; setting: string; kind: 'list'; items: EffectiveListItem[] }
+  | { key: string; setting: string; kind: 'times'; times: string[]; empty: string; firstIsNextTick: boolean }
 
-function effectiveRows(e: EffectiveSettings): EffectiveRow[] {
+const DISABLED_NOT_SCHEDULED = 'Disabled: not scheduled (Run now still works)'
+
+function effectiveRows(e: EffectiveSettings, enabled: boolean): EffectiveRow[] {
   const list = (key: string, setting: string, items: EffectiveListItem[]): EffectiveRow => ({ key, setting, kind: 'list', items })
   return [
     list('patterns', 'Patterns', e.patterns),
@@ -70,7 +74,35 @@ function effectiveRows(e: EffectiveSettings): EffectiveRow[] {
       source: e.allowPrerelease.source,
     },
     { key: 'schedule', setting: 'Schedule (cron, UTC)', kind: 'scalar', value: e.schedule.value, source: e.schedule.source },
+    {
+      key: 'last',
+      setting: 'Last scheduled',
+      kind: 'times',
+      times: e.lastScheduledAtUtc ? [e.lastScheduledAtUtc] : [],
+      empty: enabled ? 'Never scheduled' : DISABLED_NOT_SCHEDULED,
+      firstIsNextTick: false,
+    },
+    {
+      key: 'next',
+      setting: 'Next runs',
+      kind: 'times',
+      times: e.nextScheduledRunsUtc ?? [],
+      empty: enabled ? 'Not available' : DISABLED_NOT_SCHEDULED,
+      firstIsNextTick: !e.lastScheduledAtUtc,
+    },
   ]
+}
+
+function ScheduleTime({ iso, label }: { iso: string; label?: string }) {
+  return (
+    <span className="flex flex-wrap items-baseline gap-x-2">
+      {label && <span className="font-medium">{label}</span>}
+      <time dateTime={iso}>{formatUtc(iso)}</time>
+      <span className="text-muted-foreground">
+        (local <time dateTime={iso}>{formatDate(iso)}</time>)
+      </span>
+    </span>
+  )
 }
 
 const row = columnHelper<EffectiveRow>()
@@ -85,6 +117,20 @@ const effectiveColumns = row.columns([
         <span className={r.key === 'schedule' ? 'font-mono' : undefined} data-testid={`effective-value-${r.key}`}>
           {r.value}
         </span>
+      ) : r.kind === 'times' ? (
+        r.times.length === 0 ? (
+          <span className="text-muted-foreground" data-testid={r.key === 'next' ? 'schedule-next' : 'schedule-last'}>
+            {r.empty}
+          </span>
+        ) : (
+          <ul className="grid gap-1" data-testid={r.key === 'next' ? 'schedule-next' : 'schedule-last'}>
+            {r.times.map((iso, i) => (
+              <li key={iso}>
+                <ScheduleTime iso={iso} label={r.firstIsNextTick && i === 0 ? 'Next tick:' : undefined} />
+              </li>
+            ))}
+          </ul>
+        )
       ) : r.items.length === 0 ? (
         <span className="text-muted-foreground" data-testid={`effective-value-${r.key}`}>
           None
@@ -104,7 +150,11 @@ const effectiveColumns = row.columns([
     id: 'source',
     header: 'Source',
     cell: ({ row: { original: r } }) =>
-      r.kind === 'scalar' ? <SourcePill source={r.source} testId={`effective-source-${r.key}`} /> : <span className="text-muted-foreground">Per item</span>,
+      r.kind === 'scalar' ? (
+        <SourcePill source={r.source} testId={`effective-source-${r.key}`} />
+      ) : (
+        <span className="text-muted-foreground">{r.kind === 'times' ? 'Scheduler' : 'Per item'}</span>
+      ),
   }),
 ])
 
@@ -314,7 +364,17 @@ function SettingsForm({
   )
 }
 
-function EffectiveCard({ effective, error, loading }: { effective: EffectiveSettings | undefined; error: unknown; loading: boolean }) {
+function EffectiveCard({
+  effective,
+  enabled,
+  error,
+  loading,
+}: {
+  effective: EffectiveSettings | undefined
+  enabled: boolean
+  error: unknown
+  loading: boolean
+}) {
   return (
     <Card className="mb-6 gap-3 p-5" data-testid="effective-card">
       <h2 className="text-base font-semibold">Effective settings</h2>
@@ -339,7 +399,7 @@ function EffectiveCard({ effective, error, loading }: { effective: EffectiveSett
           )}
           <DataTable
             columns={effectiveColumns}
-            data={effective ? effectiveRows(effective) : []}
+            data={effective ? effectiveRows(effective, enabled) : []}
             caption="Effective settings"
             loading={loading}
             empty="No effective settings."
@@ -428,7 +488,7 @@ export function RepositoryPage() {
             }}
             onMessage={setStatus}
           />
-          <EffectiveCard effective={effective} error={effectiveError} loading={effectiveLoading} />
+          <EffectiveCard effective={effective} enabled={repo.enabled} error={effectiveError} loading={effectiveLoading} />
         </>
       )}
     </>

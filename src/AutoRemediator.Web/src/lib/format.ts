@@ -7,6 +7,17 @@ export function formatDate(iso: string): string {
   return dateTime.format(new Date(iso))
 }
 
+const utcFormat = new Intl.DateTimeFormat('en-GB', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+  timeZone: 'UTC',
+})
+
+/** A timestamp in UTC, labelled, for schedules (cron is UTC). */
+export function formatUtc(iso: string): string {
+  return `${utcFormat.format(new Date(iso))} UTC`
+}
+
 /** The last segment of an "org/project/repo" slug. */
 export function shortSlug(slug: string): string {
   const i = slug.lastIndexOf('/')

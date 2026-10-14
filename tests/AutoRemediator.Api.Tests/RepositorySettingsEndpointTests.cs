@@ -264,6 +264,61 @@ public class RepositorySettingsEndpointTests(ApiFactory factory) : IClassFixture
         Assert.Contains(dto.Warnings, w => w.StartsWith("No package patterns", StringComparison.Ordinal));
     }
 
+    // ---- schedule visibility ---------------------------------------------------------
+
+    private static readonly DateTimeOffset Now = new(2026, 10, 14, 10, 0, 0, TimeSpan.Zero);
+
+    private async Task<EffectiveSettingsDto> EffectiveAsync(ManagedRepository repo, DateTimeOffset? scheduledAt)
+    {
+        var repos = new MemoryRepositoryStore();
+        repos.Seed(repo);
+        var state = new MemoryScheduleStateStore();
+        if (scheduledAt is { } at)
+        {
+            state.Seed(repo.Id, at);
+        }
+
+        var client = factory.CreateClient(repos, new MemorySettingsStore(Global()), state, new FixedTimeProvider(Now));
+        return (await client.GetFromJsonAsync<EffectiveSettingsDto>($"/api/repositories/{repo.Id}/effective-settings", Ct))!;
+    }
+
+    [Fact]
+    public async Task Never_scheduled_repository_is_due_at_the_next_tick_with_three_next_runs()
+    {
+        var dto = await EffectiveAsync(NewRepo(), null);
+
+        Assert.Null(dto.LastScheduledAtUtc);
+        Assert.True(dto.DueAtNextTick);
+        Assert.Equal(3, dto.NextScheduledRunsUtc!.Count);
+        Assert.Equal(Now, dto.NextScheduledRunsUtc[0]);
+        Assert.Equal(
+            [new DateTimeOffset(2026, 10, 15, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, 16, 0, 0, 0, TimeSpan.Zero)],
+            dto.NextScheduledRunsUtc.Skip(1).ToArray());
+    }
+
+    [Fact]
+    public async Task Recently_scheduled_repository_is_not_due_and_next_run_is_the_coming_03_00_utc()
+    {
+        var dto = await EffectiveAsync(NewRepo(new RepositorySettings(schedule: "0 3 * * *")), Now.AddMinutes(-1));
+
+        Assert.Equal(Now.AddMinutes(-1), dto.LastScheduledAtUtc);
+        Assert.False(dto.DueAtNextTick);
+        Assert.Equal(3, dto.NextScheduledRunsUtc!.Count);
+        Assert.Equal(new DateTimeOffset(2026, 10, 15, 3, 0, 0, TimeSpan.Zero), dto.NextScheduledRunsUtc[0]);
+    }
+
+    [Fact]
+    public async Task Disabled_repository_has_no_schedule_times()
+    {
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "off", enabled: false);
+
+        var dto = await EffectiveAsync(repo, Now.AddMinutes(-1));
+
+        Assert.Null(dto.LastScheduledAtUtc);
+        Assert.Null(dto.NextScheduledRunsUtc);
+        Assert.Null(dto.DueAtNextTick);
+    }
+
     // ---- unknown ids -----------------------------------------------------------------
 
     [Fact]

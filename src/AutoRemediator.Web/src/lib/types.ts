@@ -57,6 +57,11 @@ export interface EffectiveSettings {
   allowPrerelease: EffectiveValue
   schedule: EffectiveValue
   warnings: string[]
+  /** Null for a disabled repository or one that was never scheduled. */
+  lastScheduledAtUtc?: string | null
+  /** The next occurrences; when never scheduled the first is "now" (the next tick). Null for a disabled repository. */
+  nextScheduledRunsUtc?: string[] | null
+  dueAtNextTick?: boolean | null
 }
 
 /** Body of a 202 from POST /api/repositories/{id}/run. */

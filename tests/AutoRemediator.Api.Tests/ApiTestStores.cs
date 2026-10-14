@@ -1,5 +1,6 @@
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Configuration;
+using AutoRemediator.Infrastructure.Scheduling;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,16 +46,56 @@ internal sealed class MemorySettingsStore(TargetingSettings? initial = null) : I
     }
 }
 
+internal sealed class MemoryScheduleStateStore : IScheduleStateStore
+{
+    private readonly Dictionary<Guid, DateTimeOffset?> _rows = new();
+
+    public void Seed(Guid id, DateTimeOffset last) => _rows[id] = last;
+
+    public Task<ScheduleState?> GetAsync(Guid repositoryId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<ScheduleState?>(_rows.TryGetValue(repositoryId, out var last) ? new(repositoryId, last, "1") : null);
+
+    public Task<bool> TryClaimAsync(
+        Guid repositoryId, ScheduleState? current, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        _rows[repositoryId] = now;
+        return Task.FromResult(true);
+    }
+
+    public Task RevertAsync(Guid repositoryId, DateTimeOffset? previous, CancellationToken cancellationToken = default)
+    {
+        _rows[repositoryId] = previous;
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => now;
+}
+
 internal static class ApiFactoryExtensions
 {
     /// <summary>A client over in-memory repository and global-settings stores (the real effective-settings provider runs).</summary>
-    public static HttpClient CreateClient(this ApiFactory factory, MemoryRepositoryStore repos, MemorySettingsStore settings) =>
+    public static HttpClient CreateClient(
+        this ApiFactory factory,
+        MemoryRepositoryStore repos,
+        MemorySettingsStore settings,
+        MemoryScheduleStateStore? scheduleState = null,
+        TimeProvider? time = null) =>
         factory.WithWebHostBuilder(b =>
             b.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IManagedRepositoryStore>();
                 services.RemoveAll<ITargetingSettingsStore>();
+                services.RemoveAll<IScheduleStateStore>();
                 services.AddSingleton<IManagedRepositoryStore>(repos);
                 services.AddSingleton<ITargetingSettingsStore>(settings);
+                services.AddSingleton<IScheduleStateStore>(scheduleState ?? new MemoryScheduleStateStore());
+                if (time is not null)
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(time);
+                }
             })).CreateClient();
 }

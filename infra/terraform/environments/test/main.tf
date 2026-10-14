@@ -194,7 +194,7 @@ module "scheduler_job" {
   registry_server              = local.registry_server
 
   trigger_type    = "Schedule"
-  cron_expression = var.scheduler_cron_expression
+  cron_expression = var.scheduler_tick_cron_expression
 
   env_vars = merge(
     local.storage_env,
