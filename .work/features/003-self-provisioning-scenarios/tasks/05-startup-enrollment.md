@@ -1,6 +1,6 @@
 # 05 Enrollment at startup and scheduler ordering
 
-**Status:** todo
+**Status:** done
 **Feature:** 003-self-provisioning-scenarios
 **Depends on:** 04
 
@@ -27,7 +27,7 @@ Make enrollment automatic on every local-mode start (Azurite is not persisted, s
          .WaitFor(api)
      ```
 
-   - Add `.WaitForCompletion(enroll)` to `scheduler`. Leave `remediation`, `web` and `held-run-seeder` alone, so a failed enrollment does not stop the app.
+   - Add `.WaitForCompletion(enroll)` to `scheduler` only when `LocalRepos:RunOnStart` is true (task 04 already registers the scheduler with `WithExplicitStart()` otherwise, and the user decided it is opt-in, so enrollment must not gate it by default). Leave `remediation`, `web` and `held-run-seeder` alone, so a failed enrollment does not stop the app.
    - Include `profile <name>` in the startup `Console.WriteLine`.
 
 ## Files
@@ -45,9 +45,9 @@ Make enrollment automatic on every local-mode start (Azurite is not persisted, s
 - [ ] `dotnet build AutoRemediator.sln` and `dotnet test AutoRemediator.sln` pass, and the enroll tests run.
 - [ ] A local-mode `aspire start` with no `LocalRepos__Profile` shows the following:
   - `local-scenarios-enroll` `Finished` (exit 0), and its log shows the created rows and "Active profile: baseline";
-  - `GET /api/repositories` lists the 14 enrolled scenario repos;
+  - `GET /api/repositories` lists the 15 enrolled scenario repos (14 enabled plus `disabled-repo`);
   - `GET /api/settings` shows strategy `Minor` and the absolute `.local/feed` path;
-  - `scheduler` starts after enrollment, and its pass creates runs for the enabled repos.
+  - with `LocalRepos__RunOnStart=true`, `scheduler` starts after enrollment, and its pass creates runs for the enabled repos; by default it stays `NotStarted` until started by hand.
 - [ ] `$env:LocalRepos__Profile='major'` gives strategy `Major`.
 - [ ] `$env:LocalRepos__Profile='bogus'`:
   - `local-scenarios-enroll` exits 1 with the valid-values message;

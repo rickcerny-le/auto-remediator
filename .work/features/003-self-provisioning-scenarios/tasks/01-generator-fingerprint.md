@@ -1,6 +1,6 @@
 # 01 Generator fingerprint, skip/force modes and lock
 
-**Status:** todo
+**Status:** done
 **Feature:** 003-self-provisioning-scenarios
 **Depends on:** none
 

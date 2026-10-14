@@ -20,6 +20,7 @@
     <ProjectReference Include="..\AutoRemediator.Worker.Scheduler\AutoRemediator.Worker.Scheduler.csproj" />
     <ProjectReference Include="..\AutoRemediator.Worker.Remediation\AutoRemediator.Worker.Remediation.csproj" />
     <ProjectReference Include="..\..\tools\local-scenarios\HeldRunSeeder\HeldRunSeeder.csproj" />
+    <ProjectReference Include="..\..\tools\local-scenarios\LocalScenarioSetup\LocalScenarioSetup.csproj" />
     <ProjectReference Include="..\AutoRemediator.Contracts\AutoRemediator.Contracts.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
 

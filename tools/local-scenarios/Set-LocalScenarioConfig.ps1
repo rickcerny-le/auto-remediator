@@ -14,6 +14,11 @@ Enable just these scenario repos and disable the rest (nothing is deleted).
 
 .PARAMETER Root
 The folder the generator wrote to. Defaults to <repo root>/.local. Its feed folder is used as the feed.
+
+.NOTES
+The environment variable LOCAL_SCENARIOS_STARTUP is set by the LocalScenarioSetup wrapper (the AppHost's
+local-scenarios-enroll resource). When it is set, the closing "next step" line says the scheduler pass follows
+automatically instead of telling you to restart the scheduler. It is an internal detail; do not set it by hand.
 #>
 [CmdletBinding()]
 param(
@@ -25,6 +30,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$ProgressPreference = 'SilentlyContinue'
+if ([Console]::IsOutputRedirected) { $PSStyle.OutputRendering = 'PlainText' }
 
 $catalogue = Import-PowerShellDataFile -LiteralPath (Join-Path $PSScriptRoot 'scenarios.psd1')
 $names = @($catalogue.Repos | ForEach-Object { $_.Name })
@@ -88,4 +95,9 @@ Invoke-Api -Method Put -Path '/api/settings' -Body $settings | Out-Null
 $rows | Format-Table -AutoSize | Out-String | Write-Host
 Write-Host "Active profile: $Profile (strategy $($selected.Strategy), allowPrerelease $($selected.AllowPrerelease))"
 Write-Host "Feed: $feed"
-Write-Host 'Next step: restart the scheduler resource (Aspire dashboard, or aspire resource scheduler restart) to trigger a run for every enabled repo.'
+if ($env:LOCAL_SCENARIOS_STARTUP) {
+    Write-Host 'Started by the AppHost: when LocalRepos__RunOnStart=true the scheduler pass follows automatically; otherwise start the scheduler resource when ready.'
+}
+else {
+    Write-Host 'Next step: restart the scheduler resource (Aspire dashboard, or aspire resource scheduler restart) to trigger a run for every enabled repo.'
+}

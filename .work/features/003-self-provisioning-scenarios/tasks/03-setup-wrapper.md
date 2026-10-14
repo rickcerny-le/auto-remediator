@@ -1,6 +1,6 @@
 # 03 LocalScenarioSetup wrapper (provision and reset) with tests
 
-**Status:** todo
+**Status:** done
 **Feature:** 003-self-provisioning-scenarios
 **Depends on:** 02
 

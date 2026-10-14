@@ -29,3 +29,14 @@ Append-only.
 - **PR diff** exposed as `pullRequestDiffUrl` + `GET /api/runs/{id}/pull-request-diff`, local mode only; `PullRequestChangeKind` enum in Infrastructure, `ChangeKind` string in the DTO.
 - **No Aspire version bump** for Ollama; only `Microsoft.Extensions.Options.ConfigurationExtensions` raised to 10.0.11 in Agents.
 - **Open follow-up:** `The_real_model_call_reports_token_usage` fails against Ollama (no usage reported), so the token budget may not be enforced under Ollama.
+
+## 2026-10-14 · 003-self-provisioning-scenarios
+- **AppHost runs the generator through a small C# wrapper** (`tools/local-scenarios/LocalScenarioSetup`, modes provision/reset, later enroll), not pwsh directly. Exit codes: 0 ok, 1 script/argument failure, 2 missing tool, 3 generator lock held. Porting the generator to C# is a later feature.
+- **Fingerprint** = hash of the three generator files (LF-normalised), normalised absolute root, `dotnet --version`, and a version constant; stored in `.local/scenarios.fingerprint.json`; deleted first and written last. "Intact" is a structure check, so hand commits on `main` survive.
+- **Reset deletes only `autoremediator/*` branches** and empties `.local/prs`; leaves feed, fingerprint, `main` commits, `scenario/agent-fix`, NuGet cache, Azurite and anything outside `.local`. `-Reset` refuses on stale output and cannot combine with `-Force` or `-ResetIfCurrent`.
+- **Generator passes `--disable-build-servers`** to dotnet (no measurable cost) so killed builds leave no locked folders.
+- **Tools test project lives under the sln `tests` folder.**
+- **Scheduler is opt-in in local mode** (user decision): `WithExplicitStart()` unless `LocalRepos__RunOnStart=true`, in which case it waits for enrollment. **Reset on warm start is on by default** (`LocalRepos__ResetOnStart`). Default enrolled profile is `baseline` (`LocalRepos__Profile`).
+- **Enrollment** runs as `local-scenarios-enroll` (wrapper `enroll` mode): API URL from Aspire-injected `services__api__http__0` (no hard-coded ports), `/health` poll up to 120 s, profile validated before preflight so a bad value fails only that resource. `api` gets a `/health` check in local mode only.
+- **Aspire 13.5.1 behaviour recorded:** a non-zero exit shows as `Finished <code>`; dependents go `FailedToStart` and do not recover on a later success; `web` stays `Waiting` after an `api` failure; `restart` needs a resource that has run before (use `start` for the first run).
+- **Favicon:** replaced the leftover Blazor `favicon.png` with `favicon.svg` (emerald square, dark diamond).

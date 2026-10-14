@@ -1,6 +1,6 @@
 # Self-provisioning local scenarios
 
-**Status:** todo
+**Status:** done
 **Created:** 2026-10-14
 
 ## Goal
@@ -14,8 +14,8 @@ Make the local test scenarios effectively permanent. Today the scenario definiti
 - AppHost wiring, local mode only:
   - `local-scenarios` (provision, runs at startup). `api`, `scheduler`, `remediation` and `held-run-seeder` wait for it to complete.
   - `local-scenarios-reset` (explicit start).
-  - `local-scenarios-enroll` (runs at startup after `api` is healthy). `scheduler` waits for it to complete.
-- The profile comes from `LocalRepos__Profile` (`baseline` by default). Reset-on-start can be turned off with `LocalRepos__ResetOnStart=false`.
+  - `local-scenarios-enroll` (runs at startup after `api` is healthy). `scheduler` is opt-in: explicit start unless `LocalRepos__RunOnStart=true`, in which case it starts after provisioning and waits for enrollment to complete.
+- The profile comes from `LocalRepos__Profile` (`baseline` by default). Reset-on-start is on by default and can be turned off with `LocalRepos__ResetOnStart=false`. The scheduler is opt-in (decided by the user): it does not start automatically unless `LocalRepos__RunOnStart=true`.
 - Docs: `docs/local-testing.md`, where the quick start becomes "set env vars, `aspire start`" and the expected-results matrix and findings are kept. Also `tools/local-scenarios/README.md` and the root README's local-mode section.
 - Tests: a scripted fingerprint self-test (no Pester) and xUnit tests for the wrapper's pure logic. A verification task runs the cold-start and warm-start paths and records timings.
 
@@ -31,7 +31,7 @@ Make the local test scenarios effectively permanent. Today the scenario definiti
 - Any change to the `held-run-seeder` behaviour (it stays explicit-start). Its only change is that it waits for provisioning.
 
 ## Acceptance criteria
-- [ ] Cold start: with `.local/` deleted, `$env:LocalRepos__Enabled='true'; $env:Model__Enabled='false'; aspire start` builds `.local` (feed, repos, prs, fingerprint). `api`, `scheduler` and `remediation` stay `Waiting` until `local-scenarios` has `Finished` with exit code 0. The scenario repos are then enrolled under `baseline`, the scheduler runs its pass, and the baseline matrix in `docs/local-testing.md` is reproduced. No manual script is run.
+- [ ] Cold start: with `.local/` deleted, `$env:LocalRepos__Enabled='true'; $env:Model__Enabled='false'; aspire start` builds `.local` (feed, repos, prs, fingerprint). `api`, `scheduler` and `remediation` stay `Waiting` until `local-scenarios` has `Finished` with exit code 0. The scenario repos are then enrolled under `baseline`; after the scheduler is started (`aspire resource scheduler start`, or automatically with `LocalRepos__RunOnStart=true`) it runs its pass, and the baseline matrix in `docs/local-testing.md` is reproduced. No manual script is run.
 - [ ] Warm start: `aspire stop` then `aspire start` with nothing changed skips the rebuild. The `local-scenarios` logs say so, and it finishes in under 15 s (the actual time is recorded). By default it also fast-resets the repos and `.local/prs`.
 - [ ] A change to `scenarios.psd1`, `LocalScenarios.psm1` or `New-LocalScenarios.ps1`, a different absolute root, a different .NET SDK version, a missing or corrupt fingerprint file, or a structurally incomplete `.local` causes a rebuild on the next start. A line-ending-only change (CRLF and LF) does not.
 - [ ] `pwsh tools/local-scenarios/New-LocalScenarios.ps1 -Force` always rebuilds. Without `-Force` it skips when the output is current. `-Reset` performs only the fast reset and leaves the feed, `main`, `scenario/agent-fix`, the fingerprint file, the NuGet cache and Azurite untouched.
@@ -90,9 +90,9 @@ Make the local test scenarios effectively permanent. Today the scenario definiti
   - `api`, `scheduler`, `remediation` and `held-run-seeder` get `.WaitForCompletion(localScenarios)`.
   - `api` gets `.WithHttpHealthCheck("/health")`, in local mode only, so the default composition is unchanged.
   - `local-scenarios-enroll` gets `.WithReference(api).WaitFor(api)`. It reads `services:api:http:0` (falling back to `https`), polls `/health` for up to 2 minutes as a guard, then runs `Set-LocalScenarioConfig.ps1 -ApiUrl <url> -Profile <p> -Root <root>`.
-  - `scheduler` additionally gets `.WaitForCompletion(enroll)`, so its startup pass sees the enrolled repos. If enrollment fails, `scheduler` does not start, but `api`, `web` and `remediation` keep running. To recover, fix the cause, start `local-scenarios-enroll` again from the dashboard, then start `scheduler`.
+  - `scheduler` is registered with `WithExplicitStart()` unless `LocalRepos:RunOnStart=true` (user decision; default `false`), so enrollment never gates it by default and the user starts it on demand. When `RunOnStart=true`, it starts after provisioning and additionally gets `.WaitForCompletion(enroll)` (task 05), so its startup pass sees the enrolled repos. If enrollment fails, that scheduler does not start, but `api`, `web` and `remediation` keep running. To recover, fix the cause, start `local-scenarios-enroll` again from the dashboard, then start `scheduler`.
   - `local-scenarios-reset` is explicit-start and waits for `local-scenarios` to complete.
-- **Config keys (AppHost):** `LocalRepos:Profile` (`baseline` | `patch` | `major` | `prerelease`, default `baseline`) and `LocalRepos:ResetOnStart` (default `true`; if `false`, the provision resource runs the default mode instead of `-ResetIfCurrent`). Both are read like the existing `LocalRepos:*` keys and printed in the AppHost's startup line.
+- **Config keys (AppHost):** `LocalRepos:Profile` (`baseline` | `patch` | `major` | `prerelease`, default `baseline`) and `LocalRepos:ResetOnStart` (default `true`; if `false`, the provision resource runs the default mode instead of `-ResetIfCurrent`) and `LocalRepos:RunOnStart` (default `false`; `true` starts the scheduler automatically after provisioning and enrollment). All are read like the existing `LocalRepos:*` keys and printed in the AppHost's startup line.
 
 **Relevant decisions (decisions.md, 002):**
 - The generator is committed PowerShell 7 under `tools/local-scenarios`. It writes to the gitignored `.local`, uses absolute feed paths and purges the NuGet cache for its own ids.
@@ -110,6 +110,7 @@ Make the local test scenarios effectively permanent. Today the scenario definiti
 7. [todo] 07 Cold/warm start verification with timings
 
 ## Risks and open questions
+- **Resolved by the user: reset on every warm start is ON by default; the scheduler is OPT-IN (`LocalRepos__RunOnStart`, default false).** The two open questions below are kept for history.
 - **Open question: reset on every warm start.** The plan resets repos and `.local/prs` on every start by default (`LocalRepos__ResetOnStart=true`). Run history in Azurite is wiped on every start anyway, which leaves old branches and PR records orphaned. A clean start also reproduces the matrix exactly and avoids finding 1 (empty commits on re-runs). The cost is that the previous session's branches can no longer be inspected after a restart. Please confirm the default, or flip it.
 - **Open question: an automatic scheduler pass on every start.** Because `scheduler` now waits for enrollment, every `aspire start` in local mode runs a full pass over the enabled scenario repos (about 1 to 2 minutes) and pushes branches. This is the existing "pass at startup" behaviour made useful. Confirm that this is wanted, or say whether the scheduler should only wait for enrollment when an opt-in flag is set.
 - **Open question: the script's default mode changes.** In 002, `New-LocalScenarios.ps1` with no switches always rebuilt. The plan makes the default "rebuild only if stale", with `-Force` to rebuild unconditionally, as the request implies. Anyone used to the old behaviour needs `-Force`. The docs say so.

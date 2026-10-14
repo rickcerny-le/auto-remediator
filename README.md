@@ -89,17 +89,26 @@ stop` releases the locks.
 ### Local repository mode
 
 To run against plain git repositories on disk instead of Azure DevOps (no PAT, no Azure DevOps
-access), set `LocalRepos__Enabled` before starting; the AppHost then gives `api`, `scheduler`
-and `remediation` `AzureDevOps__Mode=Local` and the repo and pull-request folders under
-`LocalRepos:Root`:
+access), set two environment variables and start the AppHost:
 
 ```powershell
-$env:Model__Enabled='false'; $env:LocalRepos__Enabled='true'; aspire start
+$env:LocalRepos__Enabled='true'; $env:Model__Enabled='false'; aspire start
+aspire resource scheduler start     # once api is running and local-scenarios-enroll has finished
 ```
+
+Nothing needs generating or enrolling by hand: the AppHost builds the scenario feed and demo repos
+under `.local` when they are missing or stale (about 85 s cold, a few seconds when current),
+enrolls them through the API with a settings profile, and gives `api`, `scheduler` and
+`remediation` `AzureDevOps__Mode=Local`. The scheduler is not automatic: start it when you want a
+pass. Other variables: `LocalRepos__Root` (default `.local`), `LocalRepos__Profile` (`baseline`,
+`patch`, `major` or `prerelease`; default `baseline`), `LocalRepos__ResetOnStart` (default `true`)
+and `LocalRepos__RunOnStart` (default `false`; `true` starts the scheduler automatically). To reset
+the repos between profiles without a rebuild, start the `local-scenarios-reset` resource
+(`aspire resource local-scenarios-reset start`).
 
 With `Model__Enabled=false`, remediation is non-agentic: a build that fails after the bump ends
 `VerificationFailed` with no PR. See [docs/local-testing.md](docs/local-testing.md) for the full
-walkthrough.
+walkthrough, and [tools/local-scenarios/README.md](tools/local-scenarios/README.md) for the scripts.
 
 ### Functional (Playwright) smoke test
 
@@ -227,6 +236,9 @@ caveat should not be treated as resolved by anything in this feature.
 | `Model:Enabled` | AppHost setting, default `true` (a missing or unparseable value counts as true). `false` (env var `Model__Enabled`) leaves the `ollama` and `chat` resources out, so `remediation` gets no `ConnectionStrings:chat` and AI repair is unavailable. |
 | `LocalRepos:Enabled` | AppHost setting, default `false` (a missing or unparseable value counts as false). `true` (env var `LocalRepos__Enabled`) sets `AzureDevOps__Mode=Local`, `AzureDevOps__LocalRoot=<root>\repos` and `AzureDevOps__LocalPullRequestsRoot=<root>\prs` on `api`, `scheduler` and `remediation`. Independent of `Model:Enabled`. |
 | `LocalRepos:Root` | AppHost setting, default the repository's `.local` folder. Root of the `repos` and `prs` folders used in local repository mode. |
+| `LocalRepos:ResetOnStart` | AppHost setting, local mode only, default `true` (a missing or unparseable value counts as true). On every start the `local-scenarios` resource also resets the scenario repos and `<root>\prs` to a clean state (no rebuild). `false` (env var `LocalRepos__ResetOnStart`) skips the reset. |
+| `LocalRepos:Profile` | AppHost setting, local mode only, default `baseline`. The settings profile `local-scenarios-enroll` applies at startup: `baseline`, `patch`, `major` or `prerelease` (env var `LocalRepos__Profile`, lower case). An invalid value fails only the enroll resource. |
+| `LocalRepos:RunOnStart` | AppHost setting, local mode only, default `false` (a missing or unparseable value counts as false). In local mode `scheduler` is explicit-start: start it from the dashboard or `aspire resource scheduler start`. `true` (env var `LocalRepos__RunOnStart`) starts it automatically once provisioning has finished. |
 | `Agents:MaxAttempts` / `Agents:TokenBudget` / `Agents:AttemptTimeout` | Bounds on the AI loop: attempts per run (3), tokens per run (120k), and per-model-call timeout (3m). |
 | `Scheduler:DevLoopEnabled` / `Scheduler:DevLoopIntervalSeconds` | Local-only re-trigger of the run-once scheduler. |
 | `AzureDevOps:Mode` | `AzureDevOps` (default) or `Local`, case-insensitive. `Local` swaps the REST client for `LocalRepositoryClient`, which works against plain git repositories on disk (needs `git` on PATH; no PAT). |

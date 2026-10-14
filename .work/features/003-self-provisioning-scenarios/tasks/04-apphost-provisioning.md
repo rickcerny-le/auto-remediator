@@ -1,6 +1,6 @@
 # 04 AppHost: provisioning at startup and the reset resource
 
-**Status:** todo
+**Status:** done
 **Feature:** 003-self-provisioning-scenarios
 **Depends on:** 03
 
@@ -16,6 +16,7 @@ Wire the wrapper into the AppHost so that, in local mode, `.local` is built or c
 2. In `AutoRemediator.AppHost.csproj`, add a `ProjectReference` to `tools/local-scenarios/LocalScenarioSetup/LocalScenarioSetup.csproj` (like `HeldRunSeeder`).
 3. In `AppHost.cs`, inside local mode only:
    - Read `LocalRepos:ResetOnStart`. A missing or unparseable value means `true`, the same parsing style as `Model:Enabled`.
+   - Read `LocalRepos:RunOnStart` (default `false`; missing or unparseable means false). Unless it is `true`, register `scheduler` with `WithExplicitStart()` (user decision: the scheduler is opt-in). When `true`, it starts after provisioning (and, from task 05, after enrollment). Enrollment itself still runs automatically, and the scheduler is not gated on it unless `RunOnStart` is true.
    - Compute `scriptsDir = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", "tools", "local-scenarios"))`.
    - Register `local-scenarios`:
 
@@ -43,7 +44,7 @@ Wire the wrapper into the AppHost so that, in local mode, `.local` is built or c
 ## Done when
 - [ ] `dotnet build AutoRemediator.sln` and `dotnet test AutoRemediator.sln` pass (run `aspire stop` first).
 - [ ] With `.local` deleted, `$env:LocalRepos__Enabled='true'; $env:Model__Enabled='false'; aspire start`:
-  - `aspire describe` shows `api`, `scheduler` and `remediation` waiting until `local-scenarios` is `Finished` (exit 0);
+  - `aspire describe` shows `api` and `remediation` waiting until `local-scenarios` is `Finished` (exit 0), and `scheduler` `NotStarted` (explicit start) unless `LocalRepos__RunOnStart=true`, when it also waits;
   - `aspire logs local-scenarios` shows the rebuild;
   - `.local/scenarios.fingerprint.json` exists afterwards.
 - [ ] `aspire stop`, then `aspire start` again: the `local-scenarios` logs say "up to date" plus the reset lines, and it finishes in under 15 s.

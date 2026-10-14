@@ -1,6 +1,6 @@
 # 07 Cold/warm start verification with timings
 
-**Status:** todo
+**Status:** done
 **Feature:** 003-self-provisioning-scenarios
 **Depends on:** 06
 

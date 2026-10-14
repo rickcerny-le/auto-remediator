@@ -43,16 +43,60 @@ if (string.IsNullOrWhiteSpace(localRoot))
 }
 localRoot = Path.GetFullPath(localRoot);
 
+// LocalRepos:ResetOnStart (env var LocalRepos__ResetOnStart) makes the provisioning step also reset
+// the repos and prs to a clean state on every start. A missing or unparseable value means true.
+var resetOnStart = !bool.TryParse(builder.Configuration["LocalRepos:ResetOnStart"], out var resetValue) || resetValue;
+// LocalRepos:RunOnStart (env var LocalRepos__RunOnStart) starts the scheduler automatically once
+// provisioning is done. Default false: the scheduler is opt-in in local mode (start it from the
+// dashboard or `aspire resource scheduler start`). A missing or unparseable value means false.
+var runOnStart = bool.TryParse(builder.Configuration["LocalRepos:RunOnStart"], out var runValue) && runValue;
+// LocalRepos:Profile (env var LocalRepos__Profile): the settings profile enrolled at startup, one of
+// baseline|patch|major|prerelease. Passed through as given; local-scenarios-enroll validates it, so a
+// bad value fails that resource rather than the AppHost.
+var profile = builder.Configuration["LocalRepos:Profile"];
+if (string.IsNullOrWhiteSpace(profile))
+{
+    profile = "baseline";
+}
+
+// --- Local scenario provisioning (local mode only) ---
+// local-scenarios builds or confirms <root> (feed, repos, prs) with tools/local-scenarios, and
+// resets it unless ResetOnStart=false. It has no WaitFor, so it runs in parallel with the
+// emulators' start. api, scheduler, remediation and held-run-seeder wait for it to complete: if it
+// exits non-zero they do not start, so nothing reads a half-built <root>.
+IResourceBuilder<ProjectResource>? localScenarios = null;
+var scriptsDir = string.Empty;
+if (localReposEnabled)
+{
+    scriptsDir = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", "tools", "local-scenarios"));
+
+    var provisionArgs = new List<string> { "provision", "--scripts", scriptsDir, "--root", localRoot };
+    if (!resetOnStart)
+    {
+        provisionArgs.Add("--no-reset");
+    }
+
+    localScenarios = builder.AddProject<Projects.LocalScenarioSetup>("local-scenarios")
+        .WithArgs(provisionArgs.ToArray());
+
+    // Explicit start: the fast reset between profiles or runs, without a rebuild.
+    builder.AddProject<Projects.LocalScenarioSetup>("local-scenarios-reset")
+        .WithArgs("reset", "--scripts", scriptsDir, "--root", localRoot)
+        .WaitForCompletion(localScenarios)
+        .WithExplicitStart();
+}
+
 IResourceBuilder<ProjectResource> WithLocalRepos(IResourceBuilder<ProjectResource> project) =>
     localReposEnabled
         ? project
             .WithEnvironment("AzureDevOps__Mode", "Local")
             .WithEnvironment("AzureDevOps__LocalRoot", Path.Combine(localRoot, "repos"))
             .WithEnvironment("AzureDevOps__LocalPullRequestsRoot", Path.Combine(localRoot, "prs"))
+            .WaitForCompletion(localScenarios!)
         : project;
 
 Console.WriteLine(localReposEnabled
-    ? $"AppHost: repository mode Local (root {localRoot}); model {(modelEnabled ? "enabled" : "disabled")}"
+    ? $"AppHost: repository mode Local (root {localRoot}); profile {profile}; reset on start {(resetOnStart ? "true" : "false")}; scheduler {(runOnStart ? "runs on start" : "explicit start")}; model {(modelEnabled ? "enabled" : "disabled")}"
     : $"AppHost: repository mode AzureDevOps; model {(modelEnabled ? "enabled" : "disabled")}");
 
 // --- API (minimal API, vertical slice) ---
@@ -63,6 +107,25 @@ var api = builder.AddProject<Projects.AutoRemediator_Api>("api")
     .WaitFor(storage)
     .WaitFor(serviceBus);
 WithLocalRepos(api);
+
+// --- Local enrollment (local mode only) ---
+// Azurite is not persisted, so the scenario repos are enrolled on every start, after api is healthy.
+// The health check is local-mode only so the Azure DevOps composition is unchanged. /health is mapped
+// only in Development (ServiceDefaults.MapDefaultEndpoints); Aspire runs projects as Development
+// locally, but a non-Development launch profile would make this check fail and block the waiters.
+// The enroll resource gets the API URL from service discovery (WithReference), never a fixed port.
+// Nothing but the scheduler (and only when RunOnStart=true) waits for it, so a failed enrollment
+// (for example a bad LocalRepos__Profile) leaves api, web and remediation running.
+IResourceBuilder<ProjectResource>? enroll = null;
+if (localReposEnabled)
+{
+    api.WithHttpHealthCheck("/health");
+
+    enroll = builder.AddProject<Projects.LocalScenarioSetup>("local-scenarios-enroll")
+        .WithArgs("enroll", "--scripts", scriptsDir, "--root", localRoot, "--profile", profile)
+        .WithReference(api)
+        .WaitFor(api);
+}
 
 // --- Web UI (React SPA on Vite) ---
 // The Vite dev server proxies /api to the API's injected service-discovery URL, so the browser
@@ -82,6 +145,19 @@ var scheduler = builder.AddProject<Projects.AutoRemediator_Worker_Scheduler>("sc
     .WaitFor(storage)
     .WaitFor(serviceBus);
 WithLocalRepos(scheduler);
+if (localReposEnabled && !runOnStart)
+{
+    // Opt-in in local mode: starts on demand (the dashboard, or `aspire resource scheduler start`).
+    // It still waits for local-scenarios; enrollment does not gate it by default.
+    scheduler.WithExplicitStart();
+}
+else if (localReposEnabled)
+{
+    // RunOnStart=true: the startup pass must see the enrolled repos, so wait for enrollment to finish.
+    // If enrollment fails the scheduler does not start; fix the cause, start local-scenarios-enroll
+    // again, then start the scheduler.
+    scheduler.WaitForCompletion(enroll!);
+}
 
 // --- Remediation worker (deployed as an event-driven, queue-scaled ACA Job) ---
 var remediation = builder.AddProject<Projects.AutoRemediator_Worker_Remediation>("remediation")
@@ -103,8 +179,9 @@ if (chat is not null)
 // --- Held-for-review seeder (local mode only) ---
 // Explicit start: it does nothing until started from the dashboard (or `aspire resource held-run-seeder start`).
 // It gets the Azurite connection strings injected like the other resources, plus the local-mode
-// AzureDevOps__* settings so it reads the real held-review repo under <root>\repos. Run
-// tools/local-scenarios/Set-LocalScenarioConfig.ps1 first so the repo is enrolled.
+// AzureDevOps__* settings so it reads the real held-review repo under <root>\repos. It waits for
+// local-scenarios (via WithLocalRepos), so the repos exist; it still needs the repo to be
+// enrolled, which local-scenarios-enroll does automatically.
 if (localReposEnabled)
 {
     var heldRunSeeder = builder.AddProject<Projects.HeldRunSeeder>("held-run-seeder")

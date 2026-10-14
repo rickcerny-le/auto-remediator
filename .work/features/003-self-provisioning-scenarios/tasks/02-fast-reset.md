@@ -1,6 +1,6 @@
 # 02 Fast reset mode
 
-**Status:** todo
+**Status:** done
 **Feature:** 003-self-provisioning-scenarios
 **Depends on:** 01
 

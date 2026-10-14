@@ -9,6 +9,8 @@ function Invoke-Dotnet {
     $previous = Get-Location
     try {
         if ($WorkingDirectory) { Set-Location -LiteralPath $WorkingDirectory }
+        # No build servers, so a killed generator leaves no compiler processes holding .local files.
+        if ($Arguments[0] -in 'build', 'restore', 'pack') { $Arguments = @($Arguments) + '--disable-build-servers' }
         $output = & dotnet @Arguments 2>&1
         if ($LASTEXITCODE -ne 0) {
             $output | ForEach-Object { Write-Host $_ }
@@ -574,4 +576,180 @@ function Test-ScenarioRepos {
     [pscustomobject]@{ RepoCount = $count; Errors = $errors.ToArray() }
 }
 
-Export-ModuleMember -Function New-ScenarioFeed, New-ScenarioRepos, Test-ScenarioFeed, Test-ScenarioRepos, Get-ScenarioCatalogue
+# Bump by hand when output-affecting behaviour changes outside the hashed files.
+$script:FingerprintVersion = 1
+$script:FingerprintInputs = @('scenarios.psd1', 'LocalScenarios.psm1', 'New-LocalScenarios.ps1')
+
+function Get-NormalizedRoot {
+    param([Parameter(Mandatory)][string]$Root)
+    $full = [IO.Path]::GetFullPath($Root)
+    $trimmed = $full.TrimEnd('\', '/')
+    if ($trimmed.Length -lt 2) { $trimmed = $full }
+    if ($IsWindows) {
+        $trimmed = $trimmed.ToLowerInvariant()
+        if ($trimmed -match '^[a-z]:') { $trimmed = $trimmed.Substring(0, 1).ToUpperInvariant() + $trimmed.Substring(1) }
+    }
+    $trimmed
+}
+
+function Get-NormalizedFileText {
+    # UTF-8 text, BOM stripped, CRLF and CR turned into LF, so line endings and editors never change the hash.
+    param([Parameter(Mandatory)][string]$Path)
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $text = [Text.UTF8Encoding]::new($false).GetString($bytes)
+    $text.TrimStart([char]0xFEFF).Replace("`r`n", "`n").Replace("`r", "`n")
+}
+
+function Get-Sha256Hex {
+    param([Parameter(Mandatory)][string]$Text)
+    $hash = [Security.Cryptography.SHA256]::HashData([Text.UTF8Encoding]::new($false).GetBytes($Text))
+    [Convert]::ToHexString($hash).ToLowerInvariant()
+}
+
+function Get-ScenarioFingerprint {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)][string]$ScriptsDirectory
+    )
+    $normalizedRoot = Get-NormalizedRoot -Root $Root
+    $sdk = ((& dotnet --version) | Select-Object -First 1).ToString().Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $sdk) { throw 'Could not determine the .NET SDK version (dotnet --version).' }
+
+    $parts = [Collections.Generic.List[string]]::new()
+    $parts.Add("fingerprint-version:$script:FingerprintVersion")
+    $inputs = [Collections.Generic.List[object]]::new()
+    foreach ($name in $script:FingerprintInputs) {
+        $text = Get-NormalizedFileText -Path (Join-Path $ScriptsDirectory $name)
+        $parts.Add("file:${name}:$text")
+        $inputs.Add([pscustomobject]@{ name = $name; hash = (Get-Sha256Hex $text) })
+    }
+    $parts.Add("root:$normalizedRoot")
+    $parts.Add("dotnet:$sdk")
+
+    [pscustomobject]@{
+        Fingerprint        = Get-Sha256Hex ($parts -join "`0")
+        FingerprintVersion = $script:FingerprintVersion
+        Root               = $normalizedRoot
+        DotnetSdk          = $sdk
+        Inputs             = $inputs.ToArray()
+    }
+}
+
+function Write-ScenarioFingerprint {
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)]$Fingerprint)
+    $doc = [ordered]@{
+        fingerprint        = $Fingerprint.Fingerprint
+        fingerprintVersion = $Fingerprint.FingerprintVersion
+        root               = $Fingerprint.Root
+        dotnetSdk          = $Fingerprint.DotnetSdk
+        inputs             = @($Fingerprint.Inputs | ForEach-Object { [ordered]@{ name = $_.name; hash = $_.hash } })
+        generatedAtUtc     = [DateTime]::UtcNow.ToString('o')
+    }
+    $json = ($doc | ConvertTo-Json -Depth 5) + "`n"
+    [IO.File]::WriteAllText((Join-Path $Root 'scenarios.fingerprint.json'), $json, [Text.UTF8Encoding]::new($false))
+}
+
+function Test-ScenarioOutputCurrent {
+    # Structural check only. Commit ids are deliberately not compared, so hand commits to main survive.
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)]$Catalogue,
+        [Parameter(Mandatory)]$Fingerprint
+    )
+    $no = { param($why) [pscustomobject]@{ Current = $false; Reason = $why } }
+
+    $file = Join-Path $Root 'scenarios.fingerprint.json'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return (& $no 'scenarios.fingerprint.json is missing') }
+    try { $stored = [IO.File]::ReadAllText($file) | ConvertFrom-Json -ErrorAction Stop }
+    catch { return (& $no 'scenarios.fingerprint.json is corrupt') }
+    $storedValue = if ($stored -and $stored.PSObject.Properties['fingerprint']) { $stored.fingerprint } else { $null }
+    if (-not $storedValue) { return (& $no 'scenarios.fingerprint.json is corrupt (no fingerprint)') }
+    if ($storedValue -ne $Fingerprint.Fingerprint) {
+        return (& $no 'the generator inputs, root or .NET SDK changed (fingerprint mismatch)')
+    }
+
+    $feed = Join-Path $Root 'feed'
+    if (-not (Test-Path -LiteralPath $feed -PathType Container)) { return (& $no "feed folder is missing ($feed)") }
+    $expected = @($Catalogue.Packages | ForEach-Object { Get-PackageFileName $_ }) | Sort-Object
+    $actual = @(Get-ChildItem -LiteralPath $feed -File -Filter '*.nupkg' | ForEach-Object Name) | Sort-Object
+    $missing = @($expected | Where-Object { $actual -notcontains $_ })
+    if ($missing.Count -gt 0) { return (& $no "feed is missing $($missing -join ', ')") }
+    $extra = @($actual | Where-Object { $expected -notcontains $_ })
+    if ($extra.Count -gt 0) { return (& $no "feed has unexpected $($extra -join ', ')") }
+
+    $reposRoot = Join-Path $Root 'repos'
+    foreach ($spec in $Catalogue.Repos) {
+        $repo = Join-Path $reposRoot $spec.Name
+        if (Get-RepoOption $spec 'NoFolder' $false) {
+            if (Test-Path -LiteralPath $repo) { return (& $no "repo $($spec.Name) must not have a folder ($repo)") }
+            continue
+        }
+        if (-not (Test-Path -LiteralPath $repo -PathType Container)) { return (& $no "repo folder $($spec.Name) is missing ($repo)") }
+        $branches = @('main')
+        if (Get-RepoOption $spec 'AgentFix' $false) { $branches += 'scenario/agent-fix' }
+        foreach ($branch in $branches) {
+            & git -C $repo rev-parse --verify --quiet "refs/heads/$branch" *> $null
+            if ($LASTEXITCODE -ne 0) { return (& $no "repo $($spec.Name) has no branch $branch") }
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath (Join-Path $Root 'prs') -PathType Container)) { return (& $no 'prs folder is missing') }
+    [pscustomobject]@{ Current = $true; Reason = '' }
+}
+
+# Reset-ScenarioRepos returns the demo repos to their generated branch state without a rebuild.
+#
+# It DOES: prune worktree registrations, force-checkout main, hard-reset to main, git clean -xdf, delete every local
+# branch under autoremediator/, and empty <Root>/prs (the folder itself stays).
+#
+# It does NOT touch:
+#   - <Root>/feed or <Root>/scenarios.fingerprint.json
+#   - the commits on main (hand commits survive; only a rebuild with -Force discards them)
+#   - scenario/agent-fix or any branch that is not under autoremediator/
+#   - the NuGet global packages folder
+#   - Azurite (run history stays; old runs' diff links 404)
+#   - anything outside <Root>
+function Reset-ScenarioRepos {
+    param(
+        [Parameter(Mandatory)][string]$Root,
+        [Parameter(Mandatory)]$Catalogue
+    )
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $reposRoot = Join-Path $Root 'repos'
+    $repoCount = 0
+    $branchCount = 0
+    foreach ($spec in $Catalogue.Repos) {
+        if (Get-RepoOption $spec 'NoFolder' $false) { continue }
+        $repo = Join-Path $reposRoot $spec.Name
+        if (-not (Test-Path -LiteralPath $repo -PathType Container)) { continue }
+
+        $changes = @()
+        Invoke-Git -Repo $repo -Arguments @('worktree', 'prune') | Out-Null
+        Invoke-Git -Repo $repo -Arguments @('checkout', '-q', '-f', 'main') | Out-Null
+        Invoke-Git -Repo $repo -Arguments @('reset', '-q', '--hard', 'main') | Out-Null
+        $dirty = @(Invoke-Git -Repo $repo -Arguments @('status', '--porcelain', '--ignored'))
+        if ($dirty.Count -gt 0) { $changes += 'cleaned the working tree' }
+        Invoke-Git -Repo $repo -Arguments @('clean', '-xdfq') | Out-Null
+        $branches = @(Invoke-Git -Repo $repo -Arguments @('for-each-ref', '--format=%(refname:short)', 'refs/heads/autoremediator/') |
+                ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+        foreach ($branch in $branches) {
+            Invoke-Git -Repo $repo -Arguments @('branch', '-q', '-D', $branch) | Out-Null
+            $changes += "deleted $branch"
+            $branchCount++
+        }
+        $repoCount++
+        if ($changes.Count -gt 0) { Write-Host "$($spec.Name): $($changes -join ', ')" }
+    }
+
+    $prs = Join-Path $Root 'prs'
+    $records = 0
+    if (Test-Path -LiteralPath $prs -PathType Container) {
+        foreach ($item in Get-ChildItem -LiteralPath $prs -Force) {
+            Remove-Item -LiteralPath $item.FullName -Recurse -Force
+            $records++
+        }
+    }
+    Write-Host ("Reset {0} repos ({1} update branches deleted, {2} PR entries removed) in {3:N1}s" -f $repoCount, $branchCount, $records, $timer.Elapsed.TotalSeconds)
+}
+
+Export-ModuleMember -Function Reset-ScenarioRepos, New-ScenarioFeed, New-ScenarioRepos, Test-ScenarioFeed, Test-ScenarioRepos, Get-ScenarioCatalogue, Get-ScenarioFingerprint, Test-ScenarioOutputCurrent, Write-ScenarioFingerprint, Get-PackageFileName, Get-RepoOption
