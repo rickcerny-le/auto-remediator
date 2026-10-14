@@ -1,4 +1,5 @@
 using AutoRemediator.Api.Features;
+using AutoRemediator.Api.Features.Repositories;
 using AutoRemediator.Contracts.Dtos;
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Configuration;
@@ -20,17 +21,25 @@ public sealed class SettingsEndpoints : IFeatureEndpoint
 
         group.MapPut("/", async (TargetingSettingsDto dto, ITargetingSettingsStore store, CancellationToken ct) =>
         {
-            await store.SetAsync(FromDto(dto), ct);
-            return Results.Ok(dto);
+            if (SettingsValidation.Validate(dto) is { Count: > 0 } errors)
+            {
+                return Results.ValidationProblem(errors);
+            }
+
+            var settings = FromDto(dto);
+            await store.SetAsync(settings, ct);
+            return Results.Ok(ToDto(settings));
         });
     }
 
     private static TargetingSettingsDto ToDto(TargetingSettings s) =>
-        new(s.Patterns, s.Excludes, s.Feeds, s.Policy.Strategy.ToString(), s.Policy.Ignore, s.Policy.AllowPrerelease);
+        new(s.Patterns, s.Excludes, s.Feeds, s.Policy.Strategy.ToString(), s.Policy.Ignore, s.Policy.AllowPrerelease, s.DefaultSchedule);
 
     private static TargetingSettings FromDto(TargetingSettingsDto d)
     {
-        var strategy = Enum.TryParse<UpdateStrategy>(d.Strategy, ignoreCase: true, out var st) ? st : UpdateStrategy.Minor;
-        return new TargetingSettings(d.Patterns, d.Excludes, d.Feeds, new UpdatePolicy(strategy, d.Ignore, d.AllowPrerelease));
+        // Validated by SettingsValidation before this runs.
+        SettingsValidation.TryParseStrategy(d.Strategy, out var strategy);
+        return new TargetingSettings(
+            d.Patterns, d.Excludes, d.Feeds, new UpdatePolicy(strategy, d.Ignore, d.AllowPrerelease), d.DefaultSchedule);
     }
 }
