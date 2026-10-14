@@ -4,6 +4,8 @@ import type {
   ManagedRepository,
   ManagedRepositoryInput,
   PullRequestDiff,
+  EffectiveSettings,
+  RepositorySettings,
   ReviewCommand,
   RunDetail,
   RunNowResult,
@@ -60,6 +62,11 @@ export const api = {
   review: async (id: string, command: ReviewCommand) =>
     (await send(`/api/runs/${id}/review/${command}`, { method: 'POST' })).status,
   repositories: () => json<ManagedRepository[]>('/api/repositories'),
+  repository: (id: string) => json<ManagedRepository>(`/api/repositories/${id}`),
+  repositorySettings: (id: string) => json<RepositorySettings>(`/api/repositories/${id}/settings`),
+  saveRepositorySettings: (id: string, settings: RepositorySettings) =>
+    send(`/api/repositories/${id}/settings`, { method: 'PUT', ...body(settings) }),
+  effectiveSettings: (id: string) => json<EffectiveSettings>(`/api/repositories/${id}/effective-settings`),
   addRepository: (input: ManagedRepositoryInput) => send('/api/repositories', { method: 'POST', ...body(input) }),
   updateRepository: (id: string, input: ManagedRepositoryInput) =>
     send(`/api/repositories/${id}`, { method: 'PUT', ...body(input) }),
@@ -78,6 +85,24 @@ export const api = {
   settings: () => json<TargetingSettings>('/api/settings'),
   saveSettings: (settings: TargetingSettings) => send('/api/settings', { method: 'PUT', ...body(settings) }),
   dependencyMap: () => json<DependencyMap>('/api/dependency-map'),
+}
+
+/**
+ * Reads a 400 ValidationProblem body into the first message per field. The server keys are camelCase
+ * field names (patterns, strategy, schedule, defaultSchedule, ...). Anything else yields an empty record.
+ */
+export async function readFieldErrors(response: Response): Promise<Record<string, string>> {
+  try {
+    const problem = (await response.json()) as { errors?: Record<string, string[] | string> }
+    const result: Record<string, string> = {}
+    for (const [field, messages] of Object.entries(problem.errors ?? {})) {
+      const first = Array.isArray(messages) ? messages[0] : messages
+      if (first) result[field] = first
+    }
+    return result
+  } catch {
+    return {}
+  }
 }
 
 export function errorMessage(error: unknown): string {

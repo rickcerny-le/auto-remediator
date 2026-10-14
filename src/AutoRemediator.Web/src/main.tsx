@@ -9,6 +9,7 @@ import { RunsPage } from '@/pages/runs'
 import { RunDetailPage } from '@/pages/run-detail'
 import { DependencyMapPage } from '@/pages/dependency-map'
 import { ConfigurationPage } from '@/pages/configuration'
+import { RepositoryPage } from '@/pages/repository'
 import { NotFoundPage } from '@/pages/not-found'
 
 const router = createBrowserRouter([
@@ -20,6 +21,7 @@ const router = createBrowserRouter([
       { path: '/runs/:id', element: <RunDetailPage /> },
       { path: '/dependency-map', element: <DependencyMapPage /> },
       { path: '/configuration', element: <ConfigurationPage /> },
+      { path: '/configuration/repositories/:id', element: <RepositoryPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

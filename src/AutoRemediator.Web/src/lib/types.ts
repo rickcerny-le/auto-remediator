@@ -8,6 +8,7 @@ export interface ManagedRepository {
   name: string
   enabled: boolean
   targetBranch: string
+  settings?: RepositorySettings | null
 }
 
 export interface ManagedRepositoryInput {
@@ -16,6 +17,46 @@ export interface ManagedRepositoryInput {
   name: string
   enabled: boolean
   targetBranch: string
+  /** Omit on PUT to keep the stored settings. */
+  settings?: RepositorySettings | null
+}
+
+/** Per-repository settings layered over the global ones. Null scalars are inherited. */
+export interface RepositorySettings {
+  inheritGlobal: boolean
+  patterns: string[]
+  excludes: string[]
+  feeds: string[]
+  ignore: string[]
+  strategy: string | null
+  allowPrerelease: boolean | null
+  schedule: string | null
+}
+
+export type SettingSource = 'Global' | 'Repository' | 'Both' | 'Default'
+
+export interface EffectiveListItem {
+  value: string
+  source: SettingSource
+}
+
+export interface EffectiveValue {
+  value: string
+  source: SettingSource
+}
+
+/** The settings that actually apply to one repository, with a source for every value. */
+export interface EffectiveSettings {
+  repositoryId: string
+  inheritGlobal: boolean
+  patterns: EffectiveListItem[]
+  excludes: EffectiveListItem[]
+  feeds: EffectiveListItem[]
+  ignore: EffectiveListItem[]
+  strategy: EffectiveValue
+  allowPrerelease: EffectiveValue
+  schedule: EffectiveValue
+  warnings: string[]
 }
 
 /** Body of a 202 from POST /api/repositories/{id}/run. */
@@ -43,6 +84,7 @@ export interface TargetingSettings {
   strategy: string
   ignore: string[]
   allowPrerelease: boolean
+  defaultSchedule?: string | null
 }
 
 export interface DependencyMapEntry {

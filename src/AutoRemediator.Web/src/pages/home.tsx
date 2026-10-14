@@ -155,7 +155,7 @@ export function HomePage() {
         </Card>
 
         <Card className="gap-0 p-4" data-testid="targeting">
-          <h2 className="mb-3 text-base font-semibold">Targeting</h2>
+          <h2 className="mb-3 text-base font-semibold">Global targeting</h2>
           <TargetingRow label="Patterns">
             <span className="font-mono text-success">{join(settings?.patterns) ?? '—'}</span>
           </TargetingRow>

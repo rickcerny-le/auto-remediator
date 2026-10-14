@@ -19,9 +19,25 @@ public class FocusVisibleTests
             data.Add("/", forced, scheme);
             data.Add("/runs", forced, scheme);
             data.Add("/configuration", forced, scheme);
+            data.Add("/configuration/repositories/{repo}", forced, scheme);
         }
 
         return data;
+    }
+
+    private static async Task<string> FirstRepositoryIdAsync(IPage page, string baseUrl)
+    {
+        var response = await page.APIRequest.GetAsync($"{baseUrl.TrimEnd('/')}/api/repositories");
+        if (response.Ok)
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(await response.BodyAsync());
+            foreach (var repo in doc.RootElement.EnumerateArray())
+            {
+                return repo.GetProperty("id").GetString()!;
+            }
+        }
+
+        return Guid.NewGuid().ToString();
     }
 
     private sealed class Outline
@@ -53,12 +69,17 @@ public class FocusVisibleTests
         });
         var page = await context.NewPageAsync();
 
+        if (path.Contains("{repo}"))
+        {
+            path = path.Replace("{repo}", await FirstRepositoryIdAsync(page, baseUrl));
+        }
+
         await page.GotoAsync(baseUrl + path);
         await Assertions.Expect(page.Locator("main h1").First).ToBeVisibleAsync();
         await Assertions.Expect(page.GetByText("Loading…")).ToHaveCountAsync(0);
 
         var seen = new List<string>();
-        for (var i = 0; i < 40; i++)
+        for (var i = 0; i < 70; i++)
         {
             await page.Keyboard.PressAsync("Tab");
             var o = await page.EvaluateAsync<Outline?>(
@@ -79,7 +100,7 @@ public class FocusVisibleTests
         }
 
         Assert.NotEmpty(seen);
-        if (path == "/configuration")
+        if (path.StartsWith("/configuration"))
         {
             Assert.Contains(seen, s => s.StartsWith("button[combobox]"));
         }

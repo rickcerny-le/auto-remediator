@@ -20,12 +20,13 @@ public class AccessibilityTests
         var data = new TheoryData<string, string, string>();
         foreach (var scheme in new[] { "light", "dark" })
         {
-            // (name, path, selector that proves the page has rendered). "{run}" is replaced by a real run id.
+            // (name, path, scheme). "{run}" and "{repo}" are replaced by a real run / repository id.
             data.Add("overview", "/", scheme);
             data.Add("runs", "/runs", scheme);
             data.Add("run-detail", "/runs/{run}", scheme);
             data.Add("dependency-map", "/dependency-map", scheme);
             data.Add("configuration", "/configuration", scheme);
+            data.Add("repository", "/configuration/repositories/{repo}", scheme);
             data.Add("not-found", "/no/such/page", scheme);
         }
 
@@ -50,7 +51,23 @@ public class AccessibilityTests
         return Guid.NewGuid().ToString();
     }
 
-    private static async Task AssertNoViolationsAsync(IPage page, string what)
+    private static async Task<string> FirstRepositoryIdAsync(IPage page, string baseUrl)
+    {
+        var response = await page.APIRequest.GetAsync($"{baseUrl.TrimEnd('/')}/api/repositories");
+        if (response.Ok)
+        {
+            using var doc = JsonDocument.Parse(await response.BodyAsync());
+            foreach (var repo in doc.RootElement.EnumerateArray())
+            {
+                return repo.GetProperty("id").GetString()!;
+            }
+        }
+
+        // No repository exists: the not-found state of the page still has to be accessible.
+        return Guid.NewGuid().ToString();
+    }
+
+    internal static async Task AssertNoViolationsAsync(IPage page, string what)
     {
         var results = await page.RunAxe(new AxeRunOptions { RunOnly = new RunOnlyOptions { Type = "tag", Values = [.. Tags] } });
         var lines = results.Violations.Select(v =>
@@ -94,6 +111,11 @@ public class AccessibilityTests
         if (path.Contains("{run}"))
         {
             path = path.Replace("{run}", await FirstRunIdAsync(page, baseUrl));
+        }
+
+        if (path.Contains("{repo}"))
+        {
+            path = path.Replace("{repo}", await FirstRepositoryIdAsync(page, baseUrl));
         }
 
         await page.GotoAsync(baseUrl + path);
