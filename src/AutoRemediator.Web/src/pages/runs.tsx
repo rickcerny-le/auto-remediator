@@ -18,7 +18,7 @@ const col = columnHelper<RunSummary>()
 
 const columns = col.columns([
   col.accessor('repositorySlug', { header: 'Repository', cell: (c) => <span className="font-mono">{c.getValue()}</span> }),
-  col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} /> }),
+  col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} trigger={c.row.original.trigger} /> }),
   col.accessor('startedAtUtc', { header: 'Started', cell: (c) => <Timestamp iso={c.getValue()} /> }),
   col.accessor('updateCount', { header: 'Updates', cell: (c) => c.getValue() }),
   col.accessor('pullRequestUrl', { header: 'PR', cell: (c) => <PullRequestLink url={c.getValue()} /> }),

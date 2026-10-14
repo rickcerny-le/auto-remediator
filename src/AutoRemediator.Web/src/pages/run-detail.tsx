@@ -181,7 +181,7 @@ export function RunDetailPage() {
       )}
 
       <PageHeader title={run?.repositorySlug ?? 'Run detail'} titleClassName={run ? 'font-mono text-xl font-medium' : undefined}>
-        {run && <RunStatus status={run.status} />}
+        {run && <RunStatus status={run.status} trigger={run.trigger} />}
       </PageHeader>
 
       {error !== undefined ? (

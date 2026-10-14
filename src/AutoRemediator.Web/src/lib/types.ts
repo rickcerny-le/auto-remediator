@@ -18,6 +18,24 @@ export interface ManagedRepositoryInput {
   targetBranch: string
 }
 
+/** Body of a 202 from POST /api/repositories/{id}/run. */
+export interface RunNowAccepted {
+  runId: string
+  enabled: boolean
+}
+
+/** Body of a 409 from POST /api/repositories/{id}/run. */
+export interface RunNowRefused {
+  reason: string
+  heldRunId?: string
+  message: string
+}
+
+export interface RunNowResult {
+  status: number
+  body: Partial<RunNowAccepted> & Partial<RunNowRefused>
+}
+
 export interface TargetingSettings {
   patterns: string[]
   excludes: string[]
@@ -47,6 +65,7 @@ export interface RunSummary {
   finishedAtUtc: string | null
   updateCount: number
   pullRequestUrl: string | null
+  trigger: 'Scheduled' | 'Manual'
 }
 
 export interface RunUpdate {
@@ -92,6 +111,7 @@ export interface RunDetail {
   reviewNote: string | null
   /** Present only in local repository mode, when the run has a pull request. */
   pullRequestDiffUrl: string | null
+  trigger: 'Scheduled' | 'Manual'
 }
 
 export interface ProposedFile {

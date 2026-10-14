@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { Link } from 'react-router'
 import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -11,6 +12,7 @@ import { DataTable } from '@/components/data-table'
 import { columnHelper } from '@/lib/table'
 import { PageHeader } from '@/components/page-header'
 import { api, errorMessage } from '@/lib/api'
+import { cn, focusRing } from '@/lib/utils'
 import type { ManagedRepository } from '@/lib/types'
 import { useTitle } from '@/hooks'
 
@@ -30,13 +32,61 @@ function Field({ id, label, value, onChange, placeholder, testId }: { id: string
 }
 
 const col = columnHelper<ManagedRepository>()
-const repoColumns = (onDelete: (id: string) => Promise<void>) =>
+
+interface RepoActions {
+  /** Ids with a toggle or Run now request in flight. */
+  pending: ReadonlySet<string>
+  onDelete: (id: string) => Promise<void>
+  onToggle: (repo: ManagedRepository) => Promise<void>
+  onRunNow: (repo: ManagedRepository) => Promise<void>
+}
+
+const repoColumns = ({ pending, onDelete, onToggle, onRunNow }: RepoActions) =>
   col.columns([
     col.accessor('organization', { header: 'Organization' }),
     col.accessor('project', { header: 'Project' }),
     col.accessor('name', { header: 'Name' }),
     col.accessor('targetBranch', { header: 'Branch' }),
-    col.accessor('enabled', { header: 'Enabled', cell: (c) => (c.getValue() ? 'yes' : 'no') }),
+    col.accessor('enabled', {
+      header: 'Enabled',
+      cell: (c) => (
+        <Switch
+          checked={c.getValue()}
+          disabled={pending.has(c.row.original.id)}
+          onCheckedChange={() => void onToggle(c.row.original)}
+          aria-label={`Enable ${c.row.original.name}`}
+          data-testid="repo-enabled"
+        />
+      ),
+    }),
+    col.display({
+      id: 'run-now',
+      header: 'Run now',
+      cell: (c) => {
+        const repo = c.row.original
+        const noteId = `not-scheduled-${repo.id}`
+        return (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending.has(repo.id)}
+              aria-label={`Run ${repo.name} now`}
+              aria-describedby={repo.enabled ? undefined : noteId}
+              onClick={() => void onRunNow(repo)}
+              data-testid="run-now"
+            >
+              Run now
+            </Button>
+            {!repo.enabled && (
+              <span id={noteId} className="text-sm text-muted-foreground" data-testid="repo-not-scheduled">
+                Disabled: not scheduled
+              </span>
+            )}
+          </div>
+        )
+      },
+    }),
     col.display({
       id: 'delete',
       header: '',
@@ -59,8 +109,9 @@ const emptyRepo = { organization: '', project: '', name: '', targetBranch: 'main
 
 export function ConfigurationPage() {
   useTitle('Configuration · AutoRemediator')
-  const [status, setStatus] = useState<string | null>(null)
+  const [status, setStatus] = useState<ReactNode | null>(null)
   const [repos, setRepos] = useState<ManagedRepository[]>([])
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
 
   const [patterns, setPatterns] = useState('')
   const [excludes, setExcludes] = useState('')
@@ -137,7 +188,75 @@ export function ConfigurationPage() {
     [loadRepos],
   )
 
-  const columns = useMemo(() => repoColumns(deleteRepo), [deleteRepo])
+  const track = useCallback(async (id: string, work: () => Promise<void>) => {
+    setPending((p) => new Set(p).add(id))
+    try {
+      await work()
+    } finally {
+      setPending((p) => {
+        const next = new Set(p)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [])
+
+  const toggleRepo = useCallback(
+    (repo: ManagedRepository) =>
+      track(repo.id, async () => {
+        try {
+          const response = await api.updateRepository(repo.id, {
+            organization: repo.organization,
+            project: repo.project,
+            name: repo.name,
+            targetBranch: repo.targetBranch,
+            enabled: !repo.enabled,
+          })
+          if (!response.ok) setStatus(`Could not update ${repo.name} (${response.status}).`)
+        } catch (e) {
+          setStatus(`Could not update ${repo.name}: ${errorMessage(e)}`)
+        }
+        await loadRepos()
+      }),
+    [loadRepos, track],
+  )
+
+  const runNow = useCallback(
+    (repo: ManagedRepository) =>
+      track(repo.id, async () => {
+        try {
+          const { status: code, body } = await api.runNow(repo.id)
+          if (code === 202) {
+            setStatus(
+              <>
+                Run queued for {repo.name}. It appears in <Link to="/runs" className={cn(focusRing, 'rounded-sm underline')}>Runs</Link> when the
+                worker picks it up.
+                {body.enabled === false && ` ${repo.name} is disabled and will not run on schedule.`}
+              </>,
+            )
+          } else if (code === 409 && body.heldRunId) {
+            setStatus(
+              <>
+                {repo.name} is held for review; resolve the held run first.{' '}
+                <Link to={`/runs/${body.heldRunId}`} className={cn(focusRing, 'rounded-sm underline')}>
+                  Open the held run
+                </Link>
+              </>,
+            )
+          } else {
+            setStatus(`Could not run ${repo.name}: ${body.message ?? `request failed (${code})`}`)
+          }
+        } catch (e) {
+          setStatus(`Could not run ${repo.name}: ${errorMessage(e)}`)
+        }
+      }),
+    [track],
+  )
+
+  const columns = useMemo(
+    () => repoColumns({ pending, onDelete: deleteRepo, onToggle: toggleRepo, onRunNow: runNow }),
+    [pending, deleteRepo, toggleRepo, runNow],
+  )
 
   const repoField = (key: keyof typeof emptyRepo, label: string) => (
     <Field id={`new-${key}`} label={label} value={newRepo[key]} onChange={(v) => setNewRepo((r) => ({ ...r, [key]: v }))} testId={`new-${key}`} />

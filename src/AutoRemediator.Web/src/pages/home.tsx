@@ -20,7 +20,7 @@ const recentColumns = col.columns([
     header: 'Repository',
     cell: (c) => <span className="font-mono">{shortSlug(c.getValue())}</span>,
   }),
-  col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} /> }),
+  col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} trigger={c.row.original.trigger} /> }),
   col.accessor('updateCount', {
     header: 'Updates',
     cell: (c) => c.getValue(),
