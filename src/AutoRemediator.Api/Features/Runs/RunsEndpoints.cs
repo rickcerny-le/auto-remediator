@@ -123,7 +123,7 @@ public sealed class RunsEndpoints : IFeatureEndpoint
     }
 
     private static RunSummaryDto ToSummary(RemediationRun r) =>
-        new(r.Id, r.RepositorySlug, r.Status.ToString(), r.StartedAtUtc, r.FinishedAtUtc, r.Updates.Count, r.PullRequestUrl);
+        new(r.Id, r.RepositorySlug, r.Status.ToString(), r.StartedAtUtc, r.FinishedAtUtc, r.Updates.Count, r.PullRequestUrl, r.Trigger.ToString());
 
     private static RunDetailDto ToDetail(RemediationRun r, IPullRequestDiffReader diffReader) =>
         new(r.Id, r.RepositorySlug, r.Status.ToString(), r.StartedAtUtc, r.FinishedAtUtc, r.PullRequestUrl, r.Error,
@@ -132,7 +132,8 @@ public sealed class RunsEndpoints : IFeatureEndpoint
             ToRemediation(r),
             r.ProposalReference is null ? null : $"/api/runs/{r.Id}/proposal",
             r.ReviewNote,
-            diffReader.IsAvailable && r.PullRequestUrl is not null ? $"/api/runs/{r.Id}/pull-request-diff" : null);
+            diffReader.IsAvailable && r.PullRequestUrl is not null ? $"/api/runs/{r.Id}/pull-request-diff" : null,
+            r.Trigger.ToString());
 
     private static PullRequestDiffDto ToDiff(PullRequestDiff d) =>
         new(

@@ -45,7 +45,8 @@ internal sealed class RemediationRunner(
     public async Task<RemediationRun> RunAsync(RemediationRunRequested request, CancellationToken cancellationToken = default)
     {
         var slug = $"{request.Organization}/{request.Project}/{request.RepositoryName}";
-        var run = new RemediationRun(request.RunId, request.RepositoryId, slug, timeProvider.GetUtcNow());
+        var run = new RemediationRun(request.RunId, request.RepositoryId, slug, timeProvider.GetUtcNow(),
+            request.Trigger == RemediationTrigger.Manual ? RunTrigger.Manual : RunTrigger.Scheduled);
         await runStore.SaveAsync(run, cancellationToken);
 
         try

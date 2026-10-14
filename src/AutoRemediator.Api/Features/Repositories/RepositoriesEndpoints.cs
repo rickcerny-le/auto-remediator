@@ -1,7 +1,9 @@
 using AutoRemediator.Api.Features;
 using AutoRemediator.Contracts.Dtos;
+using AutoRemediator.Contracts.Messages;
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Configuration;
+using AutoRemediator.Infrastructure.Remediation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -35,6 +37,33 @@ public sealed class RepositoriesEndpoints : IFeatureEndpoint
             var updated = new ManagedRepository(id, input.Organization, input.Project, input.Name, input.Enabled, input.TargetBranch);
             await store.UpsertAsync(updated, ct);
             return Results.Ok(ToDto(updated));
+        });
+
+        // Run now (PRD 6.12). Allowed on a disabled repository: disabled means "not scheduled", not "off".
+        // Refused while the repository is held for review. Advisory, like the review endpoint's held check.
+        group.MapPost("/{id:guid}/run", async (
+            Guid id, IManagedRepositoryStore store, IRemediationRunRequester requester, CancellationToken ct) =>
+        {
+            var repo = await store.GetAsync(id, ct);
+            if (repo is null)
+            {
+                return Results.NotFound();
+            }
+
+            return await requester.RequestAsync(repo, RemediationTrigger.Manual, ct) switch
+            {
+                RunRequestResult.Held held => Results.Json(
+                    new
+                    {
+                        reason = "held",
+                        heldRunId = held.HeldRunId,
+                        message = "This repository has a proposal waiting for review. Resolve it before running again.",
+                    },
+                    statusCode: StatusCodes.Status409Conflict),
+                RunRequestResult.Enqueued enqueued => Results.Accepted(
+                    value: new { runId = enqueued.RunId, enabled = repo.Enabled }),
+                _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
+            };
         });
 
         group.MapDelete("/{id:guid}", async (Guid id, IManagedRepositoryStore store, CancellationToken ct) =>

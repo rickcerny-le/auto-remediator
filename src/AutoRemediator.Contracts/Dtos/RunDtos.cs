@@ -8,7 +8,8 @@ public sealed record RunSummaryDto(
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? FinishedAtUtc,
     int UpdateCount,
-    string? PullRequestUrl);
+    string? PullRequestUrl,
+    string Trigger = "Scheduled");
 
 /// <summary>An update applied by a run, as shown on the run detail page.</summary>
 public sealed record RunUpdateDto(
@@ -50,7 +51,8 @@ public sealed record RunDetailDto(
     RunRemediationDto? Remediation = null,
     string? ProposalUrl = null,
     string? ReviewNote = null,
-    string? PullRequestDiffUrl = null);
+    string? PullRequestDiffUrl = null,
+    string Trigger = "Scheduled");
 
 /// <summary>
 /// What the AI repair loop did for a run. Present only when the loop ran; an attempt count of zero

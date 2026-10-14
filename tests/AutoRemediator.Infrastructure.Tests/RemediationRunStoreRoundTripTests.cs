@@ -268,6 +268,50 @@ public class RemediationRunStoreRoundTripTests
     }
 
     [Fact]
+    public void Manual_trigger_survives_the_entity_round_trip()
+    {
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow, RunTrigger.Manual);
+
+        var entity = RemediationRunEntity.FromDomain(run);
+
+        Assert.Equal("Manual", entity.Trigger);
+        Assert.Equal(RunTrigger.Manual, entity.ToDomain().Trigger);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("Bogus")]
+    public void A_legacy_entity_without_a_trigger_reads_back_as_Scheduled(string? stored)
+    {
+        // Rows written before triggers existed have no Trigger column at all.
+        var entity = RemediationRunEntity.FromDomain(
+            new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow));
+        entity.Trigger = stored;
+
+        Assert.Equal(RunTrigger.Scheduled, entity.ToDomain().Trigger);
+    }
+
+    [Fact]
+    public async Task Manual_trigger_round_trips_through_the_table_store()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var provider = BuildProvider();
+        var store = provider.GetRequiredService<IRemediationRunStore>();
+
+        var run = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", DateTimeOffset.UtcNow, RunTrigger.Manual);
+
+        if (!await TrySaveAsync(store, run, ct))
+        {
+            return;
+        }
+
+        var saved = await store.GetAsync(run.Id, ct);
+        Assert.NotNull(saved);
+        Assert.Equal(RunTrigger.Manual, saved!.Trigger);
+    }
+
+    [Fact]
     public async Task FindAwaitingReviewAsync_returns_the_held_run_for_a_repository_and_null_when_none_is_held()
     {
         var ct = TestContext.Current.CancellationToken;

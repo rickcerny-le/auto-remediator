@@ -1,8 +1,7 @@
-using AutoRemediator.Contracts;
 using AutoRemediator.Contracts.Messages;
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Configuration;
-using AutoRemediator.Infrastructure.Messaging;
+using AutoRemediator.Infrastructure.Remediation;
 
 namespace AutoRemediator.Worker.Scheduler;
 
@@ -15,7 +14,7 @@ namespace AutoRemediator.Worker.Scheduler;
 public sealed class SchedulerWorker(
     IManagedRepositoryStore repositories,
     IRemediationRunStore runStore,
-    IMessagePublisher publisher,
+    IRemediationRunRequester requester,
     IHostApplicationLifetime lifetime,
     IConfiguration configuration,
     TimeProvider timeProvider,
@@ -64,29 +63,22 @@ public sealed class SchedulerWorker(
             // A repository with an open proposal receives no new updates until it is resolved
             // (FR-024). The skip is recorded rather than silently doing nothing, so a held
             // repository is visible as held rather than merely quiet (FR-025).
-            var held = await runStore.FindAwaitingReviewAsync(repo.Id, cancellationToken);
-            if (held is not null)
+            var result = await requester.RequestAsync(repo, RemediationTrigger.Scheduled, cancellationToken);
+            switch (result)
             {
-                var skip = new RemediationRun(Guid.NewGuid(), repo.Id, repo.Slug, timeProvider.GetUtcNow());
-                skip.SkippedHeld(timeProvider.GetUtcNow());
-                await runStore.SaveAsync(skip, cancellationToken);
-                logger.LogInformation(
-                    "Skipped {Slug}: held for review by run {HeldRunId}.", repo.Slug, held.Id);
-                continue;
+                case RunRequestResult.Held held:
+                    var skip = new RemediationRun(Guid.NewGuid(), repo.Id, repo.Slug, timeProvider.GetUtcNow());
+                    skip.SkippedHeld(timeProvider.GetUtcNow());
+                    await runStore.SaveAsync(skip, cancellationToken);
+                    logger.LogInformation(
+                        "Skipped {Slug}: held for review by run {HeldRunId}.", repo.Slug, held.HeldRunId);
+                    break;
+
+                case RunRequestResult.Enqueued enqueued:
+                    published++;
+                    logger.LogInformation("Enqueued remediation run {RunId} for {Slug}", enqueued.RunId, repo.Slug);
+                    break;
             }
-
-            var message = new RemediationRunRequested(
-                RunId: Guid.NewGuid(),
-                RepositoryId: repo.Id,
-                Organization: repo.Organization,
-                Project: repo.Project,
-                RepositoryName: repo.Name,
-                RequestedAtUtc: timeProvider.GetUtcNow());
-
-            await publisher.PublishAsync(RemediationQueues.RemediationRuns, message, cancellationToken);
-            published++;
-
-            logger.LogInformation("Enqueued remediation run {RunId} for {Slug}", message.RunId, repo.Slug);
         }
 
         logger.LogInformation("Scheduler run complete — enqueued {Count} remediation run(s).", published);

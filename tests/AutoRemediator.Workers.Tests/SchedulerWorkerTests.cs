@@ -2,6 +2,7 @@ using AutoRemediator.Contracts;
 using AutoRemediator.Contracts.Messages;
 using AutoRemediator.Domain;
 using AutoRemediator.Infrastructure.Configuration;
+using AutoRemediator.Infrastructure.Remediation;
 using AutoRemediator.Worker.Scheduler;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -21,10 +22,11 @@ public class SchedulerWorkerTests
         };
 
         var publisher = new RecordingPublisher();
+        var runStore = new FakeRunStore();
         var worker = new SchedulerWorker(
             new FakeManagedRepositoryStore(repositories),
-            new FakeRunStore(),
-            publisher,
+            runStore,
+            new RemediationRunRequester(runStore, publisher, TimeProvider.System),
             new FakeHostApplicationLifetime(),
             new ConfigurationManager(),
             TimeProvider.System,
@@ -37,8 +39,10 @@ public class SchedulerWorkerTests
         Assert.All(publisher.Messages, m =>
         {
             Assert.Equal(RemediationQueues.RemediationRuns, m.Queue);
-            Assert.IsType<RemediationRunRequested>(m.Message);
+            var requested = Assert.IsType<RemediationRunRequested>(m.Message);
+            Assert.Equal(RemediationTrigger.Scheduled, requested.Trigger);
         });
+        Assert.DoesNotContain(publisher.Messages, m => ((RemediationRunRequested)m.Message).RepositoryName == "disabled-repo");
     }
 
     [Fact]
@@ -50,10 +54,11 @@ public class SchedulerWorkerTests
         };
 
         var lifetime = new FakeHostApplicationLifetime();
+        var runStore = new FakeRunStore();
         var worker = new SchedulerWorker(
             new FakeManagedRepositoryStore(repositories),
-            new FakeRunStore(),
-            new RecordingPublisher(),
+            runStore,
+            new RemediationRunRequester(runStore, new RecordingPublisher(), TimeProvider.System),
             lifetime,
             new ConfigurationManager(),
             TimeProvider.System,
@@ -76,7 +81,7 @@ public class SchedulerWorkerTests
         var publisher = new RecordingPublisher();
 
         var worker = new SchedulerWorker(
-            new FakeManagedRepositoryStore([repo]), runStore, publisher,
+            new FakeManagedRepositoryStore([repo]), runStore, new RemediationRunRequester(runStore, publisher, TimeProvider.System),
             new FakeHostApplicationLifetime(), new ConfigurationManager(), TimeProvider.System,
             NullLogger<SchedulerWorker>.Instance);
 
@@ -94,7 +99,7 @@ public class SchedulerWorkerTests
         runStore.SeedHeld(repo.Id);
 
         var worker = new SchedulerWorker(
-            new FakeManagedRepositoryStore([repo]), runStore, new RecordingPublisher(),
+            new FakeManagedRepositoryStore([repo]), runStore, new RemediationRunRequester(runStore, new RecordingPublisher(), TimeProvider.System),
             new FakeHostApplicationLifetime(), new ConfigurationManager(), TimeProvider.System,
             NullLogger<SchedulerWorker>.Instance);
 
@@ -113,7 +118,7 @@ public class SchedulerWorkerTests
         var publisher = new RecordingPublisher();
 
         var worker = new SchedulerWorker(
-            new FakeManagedRepositoryStore([repo]), runStore, publisher,
+            new FakeManagedRepositoryStore([repo]), runStore, new RemediationRunRequester(runStore, publisher, TimeProvider.System),
             new FakeHostApplicationLifetime(), new ConfigurationManager(), TimeProvider.System,
             NullLogger<SchedulerWorker>.Instance);
 
@@ -132,7 +137,7 @@ public class SchedulerWorkerTests
         var publisher = new RecordingPublisher();
 
         var worker = new SchedulerWorker(
-            new FakeManagedRepositoryStore([repo]), runStore, publisher,
+            new FakeManagedRepositoryStore([repo]), runStore, new RemediationRunRequester(runStore, publisher, TimeProvider.System),
             new FakeHostApplicationLifetime(), new ConfigurationManager(), TimeProvider.System,
             NullLogger<SchedulerWorker>.Instance);
 

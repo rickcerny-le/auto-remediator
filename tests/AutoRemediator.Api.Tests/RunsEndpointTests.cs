@@ -53,7 +53,7 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         completed.Verified(VerificationOutcome.Verified(LogReference));
         completed.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/1", DateTimeOffset.UtcNow);
 
-        var failed = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/worker", DateTimeOffset.UtcNow);
+        var failed = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/worker", DateTimeOffset.UtcNow, RunTrigger.Manual);
         failed.Failed("boom", DateTimeOffset.UtcNow);
 
         var rejected = new RemediationRun(RejectedRunId, Guid.NewGuid(), "contoso/platform/api", DateTimeOffset.UtcNow);
@@ -121,6 +121,23 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
                     services.AddSingleton(diffReader);
                 }
             })).CreateClient();
+    }
+
+    [Fact]
+    public async Task List_and_detail_include_the_run_trigger()
+    {
+        var client = CreateClient();
+        var runs = await client.GetFromJsonAsync<List<RunSummaryDto>>("/api/runs", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(runs);
+        var manual = Assert.Single(runs, r => r.Trigger == "Manual");
+        Assert.Equal("contoso/platform/worker", manual.RepositorySlug);
+        Assert.All(runs.Where(r => r.Id != manual.Id), r => Assert.Equal("Scheduled", r.Trigger));
+
+        var manualDetail = await client.GetFromJsonAsync<RunDetailDto>($"/api/runs/{manual.Id}", TestContext.Current.CancellationToken);
+        var scheduledDetail = await client.GetFromJsonAsync<RunDetailDto>($"/api/runs/{CompletedRunId}", TestContext.Current.CancellationToken);
+        Assert.Equal("Manual", manualDetail!.Trigger);
+        Assert.Equal("Scheduled", scheduledDetail!.Trigger);
     }
 
     [Fact]

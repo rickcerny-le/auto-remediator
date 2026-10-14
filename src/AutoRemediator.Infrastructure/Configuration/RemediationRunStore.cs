@@ -46,6 +46,9 @@ internal sealed class RemediationRunEntity : ITableEntity
     public string? ReviewNote { get; set; }
     public int? ReviewCommandCount { get; set; }
 
+    /// <summary>Nullable: runs stored before triggers existed have none and read as Scheduled.</summary>
+    public string? Trigger { get; set; }
+
     public static RemediationRunEntity FromDomain(RemediationRun run) => new()
     {
         PartitionKey = run.RepositoryId.ToString(),
@@ -68,6 +71,7 @@ internal sealed class RemediationRunEntity : ITableEntity
         ProposalReference = run.ProposalReference,
         ReviewNote = run.ReviewNote,
         ReviewCommandCount = run.ReviewCommandCount,
+        Trigger = run.Trigger.ToString(),
     };
 
     public RemediationRun ToDomain()
@@ -78,7 +82,8 @@ internal sealed class RemediationRunEntity : ITableEntity
             Guid.Parse(RowKey), Guid.Parse(PartitionKey), RepositorySlug, status,
             StartedAtUtc, FinishedAtUtc, updates, PullRequestUrl, Error, ToVerification(),
             RemediationAttempts, RemediationTranscriptReference,
-            ProposalReference, ReviewNote, ReviewCommandCount ?? 0);
+            ProposalReference, ReviewNote, ReviewCommandCount ?? 0,
+            Enum.TryParse<RunTrigger>(Trigger, out var trigger) ? trigger : RunTrigger.Scheduled);
     }
 
     private VerificationOutcome? ToVerification()

@@ -125,6 +125,7 @@ public static class InfrastructureExtensions
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IRemediationRunner, RemediationRunner>();
+        builder.Services.AddSingleton<IRemediationRunRequester, RemediationRunRequester>();
 
         return builder;
     }

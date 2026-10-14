@@ -23,6 +23,29 @@ public class RemediationRunTests
     }
 
     [Fact]
+    public void A_new_run_is_Scheduled_unless_a_trigger_is_given()
+    {
+        Assert.Equal(RunTrigger.Scheduled, NewRun().Trigger);
+
+        var manual = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", Started, RunTrigger.Manual);
+        Assert.Equal(RunTrigger.Manual, manual.Trigger);
+    }
+
+    [Fact]
+    public void Restore_keeps_the_trigger_and_defaults_to_Scheduled()
+    {
+        var manual = RemediationRun.Restore(
+            Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", RunStatus.Completed,
+            Started, Finished, [], null, null, trigger: RunTrigger.Manual);
+        var legacy = RemediationRun.Restore(
+            Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/web-api", RunStatus.Completed,
+            Started, Finished, [], null, null);
+
+        Assert.Equal(RunTrigger.Manual, manual.Trigger);
+        Assert.Equal(RunTrigger.Scheduled, legacy.Trigger);
+    }
+
+    [Fact]
     public void Verified_records_the_outcome_without_ending_the_run()
     {
         var run = NewRun();

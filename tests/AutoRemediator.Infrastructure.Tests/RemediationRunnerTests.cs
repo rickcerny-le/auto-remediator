@@ -16,8 +16,8 @@ public class RemediationRunnerTests
 {
     private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
 
-    private static RemediationRunRequested Request => new(
-        Guid.NewGuid(), Repo.Id, Repo.Organization, Repo.Project, Repo.Name, DateTimeOffset.UtcNow);
+    private static RemediationRunRequested Request(RemediationTrigger trigger = RemediationTrigger.Scheduled) => new(
+        Guid.NewGuid(), Repo.Id, Repo.Organization, Repo.Project, Repo.Name, DateTimeOffset.UtcNow, trigger);
 
     private static RepositoryUpdatePlan SinglePlan => new(
         [new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")],
@@ -36,6 +36,19 @@ public class RemediationRunnerTests
         Assert.Equal(1, ado.Pushes);
         Assert.Equal(RunStatus.Completed, store.Last?.Status);
         Assert.Equal(VerificationClassification.Verified, run.Verification?.Classification);
+    }
+
+    [Theory]
+    [InlineData(RemediationTrigger.Scheduled, RunTrigger.Scheduled)]
+    [InlineData(RemediationTrigger.Manual, RunTrigger.Manual)]
+    public async Task The_run_is_created_with_the_trigger_from_the_message(RemediationTrigger requested, RunTrigger expected)
+    {
+        var store = new RecordingRunStore();
+
+        var run = await RunAsync(SinglePlan, new FakeAdo(), store, trigger: requested);
+
+        Assert.Equal(expected, run.Trigger);
+        Assert.Equal(expected, store.Last?.Trigger);
     }
 
     // ---- Verification outcomes -----------------------------------------------------
@@ -513,7 +526,8 @@ public class RemediationRunnerTests
         FakeVerification? verification = null,
         FakeLoop? loop = null,
         RecordingLogs? logs = null,
-        FakeProposalStore? proposalStore = null)
+        FakeProposalStore? proposalStore = null,
+        RemediationTrigger trigger = RemediationTrigger.Scheduled)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
@@ -542,7 +556,7 @@ public class RemediationRunnerTests
         builder.Services.AddSingleton<IChangeProposalStore>(proposalStore ?? new FakeProposalStore());
 
         await using var provider = builder.Services.BuildServiceProvider();
-        return await provider.GetRequiredService<IRemediationRunner>().RunAsync(Request, TestContext.Current.CancellationToken);
+        return await provider.GetRequiredService<IRemediationRunner>().RunAsync(Request(trigger), TestContext.Current.CancellationToken);
     }
 
     private sealed class FakeRepoStore(ManagedRepository repo) : IManagedRepositoryStore
