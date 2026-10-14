@@ -10,6 +10,7 @@ using AutoRemediator.Infrastructure.Feeds;
 using AutoRemediator.Infrastructure.Messaging;
 using AutoRemediator.Infrastructure.Remediation;
 using AutoRemediator.Infrastructure.Review;
+using AutoRemediator.Infrastructure.Scheduling;
 using AutoRemediator.Infrastructure.Storage;
 using AutoRemediator.Infrastructure.Verification;
 using Microsoft.Extensions.Configuration;
@@ -66,6 +67,7 @@ public static class InfrastructureExtensions
         builder.Services.AddSingleton<ITargetingSettingsStore, TableTargetingSettingsStore>();
         builder.Services.AddSingleton<IEffectiveSettingsProvider, EffectiveSettingsProvider>();
         builder.Services.AddSingleton<IRemediationRunStore, TableRemediationRunStore>();
+        builder.Services.AddSingleton<IScheduleStateStore, TableScheduleStateStore>();
         builder.Services.AddSingleton<IChangeProposalStore, ChangeProposalStore>();
         builder.Services.AddScoped<IReviewCommandHandler, ReviewCommandHandler>();
 
