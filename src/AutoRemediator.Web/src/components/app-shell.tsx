@@ -4,7 +4,7 @@ import { History, House, Menu, Monitor, Moon, Package, Settings, Sun } from 'luc
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { useTheme } from '@/hooks'
-import { cn } from '@/lib/utils'
+import { cn, focusRing } from '@/lib/utils'
 
 const nav = [
   { to: '/', label: 'Home', icon: House, end: true },
@@ -41,7 +41,7 @@ export function AppShell() {
           to={to}
           end={end}
           onClick={() => setDrawerOpen(false)}
-          className="flex items-center gap-3 px-4 py-2 text-sm text-foreground/80 hover:bg-accent aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_3px_0_0_var(--primary)]"
+          className={cn(focusRing, 'focus-visible:-outline-offset-2', 'flex items-center gap-3 px-4 py-2 text-sm text-foreground/80 hover:bg-accent aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-foreground aria-[current=page]:shadow-[inset_3px_0_0_var(--primary)]')}
         >
           <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
           {label}
@@ -54,7 +54,7 @@ export function AppShell() {
     <div className="min-h-screen">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground"
+        className={cn(focusRing, 'sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground')}
       >
         Skip to main content
       </a>

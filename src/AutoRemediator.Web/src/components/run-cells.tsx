@@ -1,6 +1,7 @@
 import { Pill } from '@/components/pill'
 import { runStatusLabel, runStatusTone } from '@/lib/status'
 import { formatDate } from '@/lib/format'
+import { cn, focusRing } from '@/lib/utils'
 
 export function RunStatus({ status }: { status: string }) {
   return <Pill tone={runStatusTone(status)}>{runStatusLabel(status)}</Pill>
@@ -17,7 +18,7 @@ export function PullRequestLink({ url }: { url: string | null }) {
       href={url}
       target="_blank"
       rel="noreferrer"
-      className="text-info hover:underline"
+      className={cn(focusRing, 'rounded-sm text-info hover:underline')}
     >
       open<span className="sr-only"> (opens in a new tab)</span>
     </a>
