@@ -30,6 +30,9 @@ internal sealed class TargetingSettingsEntity : ITableEntity
     public string IgnoreJson { get; set; } = "[]";
     public string Strategy { get; set; } = nameof(UpdateStrategy.Minor);
     public bool AllowPrerelease { get; set; }
+
+    /// <summary>Nullable so rows written before the feature load unchanged (null = built-in default schedule).</summary>
+    public string? DefaultSchedule { get; set; }
 }
 
 internal sealed class TableTargetingSettingsStore(ITableStore tableStore) : ITargetingSettingsStore
@@ -52,7 +55,8 @@ internal sealed class TableTargetingSettingsStore(ITableStore tableStore) : ITar
                 Deserialize(e.PatternsJson),
                 Deserialize(e.ExcludesJson),
                 Deserialize(e.FeedsJson),
-                policy);
+                policy,
+                e.DefaultSchedule);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
@@ -71,12 +75,12 @@ internal sealed class TableTargetingSettingsStore(ITableStore tableStore) : ITar
             IgnoreJson = Serialize(settings.Policy.Ignore),
             Strategy = settings.Policy.Strategy.ToString(),
             AllowPrerelease = settings.Policy.AllowPrerelease,
+            DefaultSchedule = settings.DefaultSchedule,
         };
         await table.UpsertEntityAsync(entity, TableUpdateMode.Replace, cancellationToken);
     }
 
-    private static string Serialize(IReadOnlyList<string> values) => JsonSerializer.Serialize(values);
+    private static string Serialize(IReadOnlyList<string> values) => JsonLists.Serialize(values);
 
-    private static List<string> Deserialize(string json)
-        => string.IsNullOrWhiteSpace(json) ? [] : JsonSerializer.Deserialize<List<string>>(json) ?? [];
+    private static List<string> Deserialize(string json) => JsonLists.Deserialize(json);
 }

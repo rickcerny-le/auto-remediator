@@ -36,7 +36,14 @@ internal sealed class InMemorySettingsStore : ITargetingSettingsStore
 {
     public TargetingSettings Current { get; set; } = TargetingSettings.Empty;
 
-    public Task<TargetingSettings> GetAsync(CancellationToken ct = default) => Task.FromResult(Current);
+    /// <summary>Number of times the settings were read (lets tests assert the global settings are loaded once).</summary>
+    public int GetCount { get; private set; }
+
+    public Task<TargetingSettings> GetAsync(CancellationToken ct = default)
+    {
+        GetCount++;
+        return Task.FromResult(Current);
+    }
 
     public Task SetAsync(TargetingSettings settings, CancellationToken ct = default)
     {

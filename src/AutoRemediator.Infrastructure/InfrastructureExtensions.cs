@@ -64,6 +64,7 @@ public static class InfrastructureExtensions
         // Configuration + run-history stores.
         builder.Services.AddSingleton<IManagedRepositoryStore, TableManagedRepositoryStore>();
         builder.Services.AddSingleton<ITargetingSettingsStore, TableTargetingSettingsStore>();
+        builder.Services.AddSingleton<IEffectiveSettingsProvider, EffectiveSettingsProvider>();
         builder.Services.AddSingleton<IRemediationRunStore, TableRemediationRunStore>();
         builder.Services.AddSingleton<IChangeProposalStore, ChangeProposalStore>();
         builder.Services.AddScoped<IReviewCommandHandler, ReviewCommandHandler>();
