@@ -12,6 +12,8 @@ namespace AutoRemediator.Infrastructure.Review;
 /// <summary>
 /// Executes the four review commands against a held proposal. Runs in the worker, which owns the
 /// Azure DevOps client — the API only enqueues (FR-013).
+/// Rebuild and Retry verify with the repository's <b>current</b> effective settings (global plus the
+/// repository's own), not the settings in force when the run was planned.
 /// </summary>
 public interface IReviewCommandHandler
 {
@@ -22,7 +24,7 @@ internal sealed class ReviewCommandHandler(
     IRemediationRunStore runStore,
     IChangeProposalStore proposals,
     IManagedRepositoryStore repositories,
-    ITargetingSettingsStore settingsStore,
+    IEffectiveSettingsProvider settingsProvider,
     IVerificationService verification,
     IRemediationLoop remediationLoop,
     IRemediationAgent agent,
@@ -118,7 +120,7 @@ internal sealed class ReviewCommandHandler(
     private async Task RebuildAsync(RemediationRun run, ChangeProposal proposal, CancellationToken cancellationToken)
     {
         var repo = await GetRepositoryAsync(run, cancellationToken);
-        var settings = await settingsStore.GetAsync(cancellationToken);
+        var settings = (await settingsProvider.GetAsync(repo, cancellationToken)).Targeting; // current effective settings
 
         var currentHead = await azureDevOps.GetBranchHeadAsync(repo, RemediationRunner.UpdateBranch, cancellationToken)
                           ?? await azureDevOps.GetBranchHeadAsync(repo, repo.TargetBranch, cancellationToken)
@@ -166,7 +168,7 @@ internal sealed class ReviewCommandHandler(
         }
 
         var repo = await GetRepositoryAsync(run, cancellationToken);
-        var settings = await settingsStore.GetAsync(cancellationToken);
+        var settings = (await settingsProvider.GetAsync(repo, cancellationToken)).Targeting; // current effective settings
 
         var plan = new RepositoryUpdatePlan(run.Updates, ManifestEdits(proposal));
 

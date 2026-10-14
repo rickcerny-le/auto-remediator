@@ -17,7 +17,7 @@ public interface IRemediationRunner
 
 internal sealed class RemediationRunner(
     IManagedRepositoryStore repositories,
-    ITargetingSettingsStore settingsStore,
+    IEffectiveSettingsProvider settingsProvider,
     IUpdatePlanner planner,
     IVerificationService verification,
     IRemediationLoop remediation,
@@ -55,7 +55,13 @@ internal sealed class RemediationRunner(
                        ?? throw new InvalidOperationException($"Repository {request.RepositoryId} is not configured.");
 
             run.Advance(RunStatus.Analyzing);
-            var settings = await settingsStore.GetAsync(cancellationToken);
+            var effective = await settingsProvider.GetAsync(repo, cancellationToken);
+            var settings = effective.Targeting;
+            foreach (var warning in effective.Warnings)
+            {
+                logger.LogWarning("Run {RunId}: settings warning for {Slug}: {Warning}", run.Id, slug, warning);
+            }
+
             var plan = await planner.PlanAsync(repo, settings, cancellationToken);
 
             if (!plan.HasChanges)

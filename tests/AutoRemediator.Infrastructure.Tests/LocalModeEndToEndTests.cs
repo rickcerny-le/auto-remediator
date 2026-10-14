@@ -135,6 +135,33 @@ public sealed class LocalModeEndToEndTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_repo_only_pattern_updates_that_repository_and_leaves_an_inheriting_sibling_alone()
+    {
+        RequireTools();
+        var shared = Id("Fabrikam.Shared");
+        var unrelated = Id("Contoso.Unrelated");
+        _feed.Add(shared, "1.0.0").Add(shared, "1.0.2");
+        var overriding = CentralRepo("repo-pattern", (shared, "1.0.0"));
+        var inheriting = CentralRepo("inherits", (shared, "1.0.0"));
+        UseSettings([unrelated]); // the global patterns do not match the shared package
+
+        var overridden = new ManagedRepository(
+            overriding.Managed.Id, "local", "scenarios", overriding.Name,
+            settings: new RepositorySettings(patterns: [shared]));
+
+        var first = await RunAsync(overridden);
+        var second = await RunAsync(inheriting.Managed);
+
+        Assert.Equal(RunStatus.Completed, first.Status);
+        var update = Assert.Single(first.Updates);
+        Assert.Equal(("1.0.0", "1.0.2"), (update.FromVersion, update.ToVersion));
+        Assert.Contains("Version=\"1.0.2\"", Git(overriding.Path, "show", $"{UpdateBranch}:Directory.Packages.props"));
+
+        Assert.Equal(RunStatus.NoUpdates, second.Status);
+        Assert.False(BranchExists(inheriting.Path, UpdateBranch));
+    }
+
+    [Fact]
     public async Task A_restore_conflict_is_rejected_without_entering_the_repair_loop()
     {
         RequireTools();

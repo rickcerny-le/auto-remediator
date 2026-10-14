@@ -11,18 +11,26 @@ public interface IDependencyMapService
 
 internal sealed class DependencyMapService(
     IManagedRepositoryStore repositories,
-    ITargetingSettingsStore settingsStore,
+    IEffectiveSettingsProvider settingsProvider,
     IRepositoryAnalyzer analyzer) : IDependencyMapService
 {
     public async Task<DependencyMap> BuildAsync(CancellationToken cancellationToken = default)
     {
-        var settings = await settingsStore.GetAsync(cancellationToken);
-        var repos = await repositories.ListAsync(cancellationToken);
+        var enabled = (await repositories.ListAsync(cancellationToken)).Where(r => r.Enabled).ToList();
+        var effective = await settingsProvider.GetAsync(enabled, cancellationToken);
 
         var entries = new List<DependencyMapEntry>();
 
-        foreach (var repo in repos.Where(r => r.Enabled))
+        foreach (var repo in enabled)
         {
+            var settings = effective[repo.Id].Targeting;
+
+            // Nothing can match without patterns, so skip the manifest read entirely.
+            if (settings.Patterns.Count == 0)
+            {
+                continue;
+            }
+
             var analysis = await analyzer.AnalyzeAsync(repo, settings, cancellationToken);
 
             // A package may appear in several manifests; show it once per repo.

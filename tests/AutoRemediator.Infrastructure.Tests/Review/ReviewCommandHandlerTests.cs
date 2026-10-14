@@ -51,7 +51,7 @@ public class ReviewCommandHandlerTests
             runStore,
             proposals,
             new FakeRepoStore(),
-            new FakeSettingsStore(),
+            new EffectiveSettingsProvider(new FakeSettingsStore()),
             verification ?? new FakeVerification(new VerificationResult(VerificationOutcome.Verified(), [])),
             loop ?? FakeLoop.NoAgent(),
             agent ?? new FakeAgent { IsAvailable = true },
