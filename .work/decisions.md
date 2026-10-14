@@ -40,3 +40,12 @@ Append-only.
 - **Enrollment** runs as `local-scenarios-enroll` (wrapper `enroll` mode): API URL from Aspire-injected `services__api__http__0` (no hard-coded ports), `/health` poll up to 120 s, profile validated before preflight so a bad value fails only that resource. `api` gets a `/health` check in local mode only.
 - **Aspire 13.5.1 behaviour recorded:** a non-zero exit shows as `Finished <code>`; dependents go `FailedToStart` and do not recover on a later success; `web` stays `Waiting` after an `api` failure; `restart` needs a resource that has run before (use `start` for the first run).
 - **Favicon:** replaced the leftover Blazor `favicon.png` with `favicon.svg` (emerald square, dark diamond).
+
+## 2026-10-14 · 004-per-repo-settings
+- **Layered settings:** one global baseline + optional per-repo settings. Lists (patterns, excludes, feeds, ignore) union with global (global first, case-insensitive dedupe); strategy/pre-release use the repo value when set, else global. One per-repo "do not inherit" switch covers all targeting fields but NOT the schedule. Presets deferred.
+- **Cron scheduling:** Cronos, 5-field, UTC. Built-in default schedule is **`0 0 * * *` (daily)** (user decision); this deliberately changes deployed cadence from 6-hourly to daily (restore with global default schedule `0 */6 * * *`). The scheduler ticks every 15 min and enqueues only due repos; never-scheduled repos run at the next tick; at most one run per repo per tick.
+- **Terraform:** `scheduler_cron_expression` is renamed `scheduler_tick_cron_expression` (default `*/15 * * * *`), no alias, because its meaning changes from cadence to tick.
+- **Run now is allowed on disabled repos** (user decision) and refused (409) only while held; the 202 body is `{ runId, enabled }`; runs record a Scheduled/Manual trigger carried on the queue message.
+- **Minimum cron interval 15 minutes is ASSUMED** (planner recommendation, not an explicit user answer); revisit if wanted.
+- **Per-repo Organization routing is out of scope** (needs a credential and client per organization); the field is labelled informational.
+- **Superseded:** 002's "scenarios run under global settings profiles" and 003's default profile `baseline` (replaced by per-repo settings in task 10).
