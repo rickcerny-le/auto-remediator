@@ -1,10 +1,10 @@
 namespace LocalScenarioSetup;
 
-internal sealed record Options(string Mode, string Scripts, string Root, bool NoReset, string? Profile = null)
+internal sealed record Options(string Mode, string Scripts, string Root, bool NoReset)
 {
     public const string Usage =
         "Usage: LocalScenarioSetup <provision|reset> --scripts <dir> --root <dir> [--no-reset]\n"
-        + "       LocalScenarioSetup enroll --scripts <dir> --root <dir> --profile <baseline|patch|major|prerelease>";
+        + "       LocalScenarioSetup enroll --scripts <dir> --root <dir>";
 
     /// <summary>Parses the command line. Returns null and an error message when it is invalid.</summary>
     public static Options? Parse(string[] args, out string? error)
@@ -25,7 +25,6 @@ internal sealed record Options(string Mode, string Scripts, string Root, bool No
 
         string? scripts = null;
         string? root = null;
-        string? profile = null;
         var noReset = false;
 
         for (var i = 1; i < args.Length; i++)
@@ -37,9 +36,6 @@ internal sealed record Options(string Mode, string Scripts, string Root, bool No
                     break;
                 case "--root" when i + 1 < args.Length:
                     root = args[++i];
-                    break;
-                case "--profile" when i + 1 < args.Length:
-                    profile = args[++i];
                     break;
                 case "--no-reset":
                     noReset = true;
@@ -68,18 +64,6 @@ internal sealed record Options(string Mode, string Scripts, string Root, bool No
             return null;
         }
 
-        if (mode == "enroll" && profile is null)
-        {
-            error = "Missing --profile.";
-            return null;
-        }
-
-        if (mode != "enroll" && profile is not null)
-        {
-            error = "--profile applies only to enroll.";
-            return null;
-        }
-
-        return new Options(mode, scripts, root, noReset, profile);
+        return new Options(mode, scripts, root, noReset);
     }
 }

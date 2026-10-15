@@ -3,16 +3,8 @@ namespace LocalScenarioSetup;
 /// <summary>Pure helpers for the enroll mode.</summary>
 internal static class Enrollment
 {
-    public static readonly IReadOnlyList<string> Profiles = ["baseline", "patch", "major", "prerelease"];
-
     public const string NoApiUrlMessage =
         "No API URL was injected; enroll runs as the Aspire resource local-scenarios-enroll.";
-
-    /// <summary>Returns an error message when the profile is not one of the valid names, else null.</summary>
-    public static string? ValidateProfile(string? profile) =>
-        profile is not null && Profiles.Contains(profile, StringComparer.Ordinal)
-            ? null
-            : $"LocalRepos__Profile '{profile}' is not valid; use baseline, patch, major or prerelease.";
 
     /// <summary>
     /// Picks the API base URL Aspire injected through WithReference(api): http first, then https.

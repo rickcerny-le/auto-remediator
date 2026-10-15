@@ -180,25 +180,6 @@ public sealed class EnrollmentTests
         Assert.Contains("local-scenarios-enroll", Enrollment.NoApiUrlMessage);
     }
 
-    [Theory]
-    [InlineData("baseline")]
-    [InlineData("patch")]
-    [InlineData("major")]
-    [InlineData("prerelease")]
-    public void Valid_profiles_pass(string profile) => Assert.Null(Enrollment.ValidateProfile(profile));
-
-    [Theory]
-    [InlineData("bogus")]
-    [InlineData("Major")]
-    [InlineData("")]
-    [InlineData(null)]
-    public void Invalid_profiles_fail_with_the_valid_values(string? profile)
-    {
-        Assert.Equal(
-            $"LocalRepos__Profile '{profile}' is not valid; use baseline, patch, major or prerelease.",
-            Enrollment.ValidateProfile(profile));
-    }
-
     [Fact]
     public void Enroll_needs_only_pwsh()
     {
@@ -214,9 +195,9 @@ public sealed class EnrollmentTests
         Assert.Equal(
             [
                 "-NoProfile", "-NonInteractive", "-File", Path.Combine(scripts, "Set-LocalScenarioConfig.ps1"),
-                "-ApiUrl", "http://localhost:2", "-Profile", "major", "-Root", root,
+                "-ApiUrl", "http://localhost:2", "-Root", root,
             ],
-            ScriptCommand.ForEnroll(scripts, root, "major", "http://localhost:2"));
+            ScriptCommand.ForEnroll(scripts, root, "http://localhost:2"));
     }
 }
 
@@ -232,7 +213,6 @@ public sealed class OptionsTests
     }
 
     [Theory]
-    [InlineData("enroll", "--scripts", "s", "--root", "r")]
     [InlineData("bogus", "--scripts", "s", "--root", "r")]
     [InlineData("reset", "--root", "r")]
     [InlineData("reset", "--scripts", "s")]
@@ -246,19 +226,18 @@ public sealed class OptionsTests
     }
 
     [Fact]
-    public void Parses_enroll_with_a_profile()
+    public void Parses_enroll_without_further_arguments()
     {
-        var o = Options.Parse(["enroll", "--scripts", "s", "--root", "r", "--profile", "major"], out var error);
+        var o = Options.Parse(["enroll", "--scripts", "s", "--root", "r"], out var error);
 
         Assert.Null(error);
-        Assert.Equal(new Options("enroll", "s", "r", false, "major"), o);
+        Assert.Equal(new Options("enroll", "s", "r", false), o);
     }
 
     [Theory]
-    [InlineData("reset", "--scripts", "s", "--root", "r", "--profile", "major")]
-    [InlineData("enroll", "--scripts", "s", "--root", "r", "--profile")]
-    [InlineData("enroll", "--scripts", "s", "--root", "r", "--no-reset", "--profile", "major")]
-    public void Rejects_misplaced_profile_arguments(params string[] args)
+    [InlineData("enroll", "--scripts", "s", "--root", "r", "--profile", "major")]
+    [InlineData("enroll", "--scripts", "s", "--root", "r", "--no-reset")]
+    public void Rejects_the_removed_profile_and_misplaced_arguments(params string[] args)
     {
         Assert.Null(Options.Parse(args, out var error));
         Assert.False(string.IsNullOrEmpty(error));

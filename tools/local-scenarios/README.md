@@ -6,7 +6,7 @@ is not supported.
 
 You normally do not run any of this by hand. With `LocalRepos__Enabled=true` the AppHost builds (or confirms),
 resets and enrolls the scenarios itself through the `LocalScenarioSetup` tool; the scripts below are what it calls and
-what you use to force a rebuild or enroll a different profile.
+what you use to force a rebuild or re-apply the catalogue settings.
 
 ## New-LocalScenarios.ps1
 
@@ -45,7 +45,7 @@ every rebuild, so a killed run is never treated as current.
 **Lock.** The script holds an exclusive lock on `<Root>/.generator.lock` while it works, so two generators cannot run at
 once on one root; the second prints `Another local-scenarios generator is running against <root>` and exits 3.
 
-Each repo's `README.md` states the scenario and its expected outcome per settings profile.
+Each repo's `README.md` states the scenario, its expected outcome and its settings (or "Inherits the global baseline").
 
 ## Test-LocalScenarioFingerprint.ps1
 
@@ -65,16 +65,16 @@ output to the resource log. It ends with `local-scenarios: <mode> finished with 
 
 ```text
 LocalScenarioSetup <provision|reset> --scripts <dir> --root <dir> [--no-reset]
-LocalScenarioSetup enroll --scripts <dir> --root <dir> --profile <baseline|patch|major|prerelease>
+LocalScenarioSetup enroll --scripts <dir> --root <dir>
 ```
 
 | Mode | AppHost resource | Runs | Needs on PATH |
 | --- | --- | --- | --- |
 | `provision` | `local-scenarios` (automatic) | `New-LocalScenarios.ps1 -ResetIfCurrent` (`--no-reset`, from `LocalRepos__ResetOnStart=false`, drops the switch) | `pwsh`, `git`, `dotnet` |
 | `reset` | `local-scenarios-reset` (explicit start) | `New-LocalScenarios.ps1 -Reset` | `pwsh`, `git` |
-| `enroll` | `local-scenarios-enroll` (after `api` is healthy) | waits up to 120 s for the API's `/health`, then `Set-LocalScenarioConfig.ps1 -Profile <p>` against the API URL Aspire injects | `pwsh` |
+| `enroll` | `local-scenarios-enroll` (after `api` is healthy) | waits up to 120 s for the API's `/health`, then `Set-LocalScenarioConfig.ps1` against the API URL Aspire injects | `pwsh` |
 
-Exit codes: `0` success; `1` the script failed, bad arguments, an invalid profile (checked first, case-sensitive) or the
+Exit codes: `0` success; `1` the script failed, bad arguments (including the removed `--profile`) or the
 API not healthy in 120 s; `2` a required tool is missing from PATH (the message names it and how to install it); `3`
 the generator lock is held (the script's own exit code is passed through). Aspire shows a non-zero exit as
 `Finished <code>`.
@@ -83,28 +83,27 @@ the generator lock is held (the script's own exit code is passed through). Aspir
 
 ```powershell
 pwsh tools/local-scenarios/Set-LocalScenarioConfig.ps1 -ApiUrl http://localhost:<port> `
-    [-Profile baseline|patch|major|prerelease] [-Only <name>,<name>] [-Root <path>]
+    [-Only <name>,<name>] [-Root <path>]
 ```
 
-The AppHost runs this for you at startup (resource `local-scenarios-enroll`, profile from `LocalRepos__Profile`).
-Run it by hand to switch profile against a running app or to use `-Only`.
+The AppHost runs this for you at startup (resource `local-scenarios-enroll`). Run it by hand to reset every repo
+(and the global baseline) to the catalogue against a running app, or to use `-Only`. `LocalRepos__Profile` is obsolete
+and ignored (the AppHost prints a notice).
 
 It enrolls every scenario repo (organization `local`, project `scenarios`, target `main`; `missing-branch` targets
-`develop`, `disabled-repo` is disabled; 15 rows, 14 enabled) and applies the settings profile. Safe to run repeatedly:
-repos are matched by name and updated, never duplicated. `-Only` enables just the named repos and disables the rest.
+`develop`, `disabled-repo` is disabled; 16 rows, 15 enabled), sends each repo's `Settings` from `scenarios.psd1` and
+applies the `GlobalSettings` baseline. Safe to run repeatedly: repos are matched by name and updated, never duplicated,
+and every repo is reset to the catalogue (settings edited in the UI are overwritten). `-Only` enables just the named repos and disables the rest.
 
-| Profile | Strategy | Allow pre-release |
-| --- | --- | --- |
-| baseline (default) | Minor | no |
-| patch | Patch | no |
-| major | Major | no |
-| prerelease | Minor | yes |
-
-All profiles use patterns `Contoso.*`, `Fabrikam.*`, `Northwind.*`, `Tailspin.*`, ignore `Tailspin.Legacy.*`, and the
-absolute `<Root>/feed` path. Settings are global, so a profile applies to every repo.
+The global baseline (`GlobalSettings`) is patterns `Contoso.*`, `Fabrikam.*`, `Northwind.*`, `Tailspin.*`, the absolute
+`<Root>/feed` path (`{feed}` in the catalogue), no excludes, no ignore, Minor, no pre-release and the built-in daily
+schedule. A repo may add a `Settings` hashtable (`InheritGlobal`, `Patterns`, `Excludes`, `Feeds`, `Ignore`, `Strategy`,
+`AllowPrerelease`, `Schedule`) and an `Expected` string; for example `patch-bump` is Patch with `0 3 * * *`, the
+`major-*` repos are Major, `prerelease` allows pre-releases, `ignored-package` ignores `Tailspin.Legacy.*` and
+`local-only` does not inherit and targets `AdventureWorks.*` only.
 
 Get the API URL from the Aspire dashboard (the `api` resource's http endpoint) or `aspire describe`. After a manual
-run, start (first pass) or restart (later passes) the `scheduler` resource to run a pass over the enabled repos.
+run, start the `scheduler` resource for a first pass, or use Run now (`POST /api/repositories/<id>/run`) on one repo.
 
 ## HeldRunSeeder
 

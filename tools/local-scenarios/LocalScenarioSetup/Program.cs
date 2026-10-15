@@ -9,18 +9,6 @@ if (options is null)
     return 1;
 }
 
-// enroll: validate the profile before anything else, so a bad LocalRepos__Profile fails this resource only.
-if (options.Mode == "enroll")
-{
-    var profileError = Enrollment.ValidateProfile(options.Profile);
-    if (profileError is not null)
-    {
-        Console.Error.WriteLine(profileError);
-        Console.Error.Flush();
-        return 1;
-    }
-}
-
 var path = Environment.GetEnvironmentVariable("PATH");
 var pathExt = Environment.GetEnvironmentVariable("PATHEXT");
 string? Locate(string tool) => ToolLocator.Find(tool, path, pathExt);
@@ -53,7 +41,7 @@ if (options.Mode == "enroll")
         return 1;
     }
 
-    Console.Out.WriteLine($"local-scenarios: enrolling profile {options.Profile} through {apiUrl}");
+    Console.Out.WriteLine($"local-scenarios: enrolling scenario repos through {apiUrl}");
     Console.Out.Flush();
 
     // A guard on top of WaitFor(api): the health check can lag the Running state.
@@ -68,7 +56,7 @@ if (options.Mode == "enroll")
         return 1;
     }
 
-    scriptArgs = ScriptCommand.ForEnroll(options.Scripts, options.Root, options.Profile!, apiUrl);
+    scriptArgs = ScriptCommand.ForEnroll(options.Scripts, options.Root, apiUrl);
     startInfoEnv["LOCAL_SCENARIOS_STARTUP"] = "1";
 }
 else

@@ -6,7 +6,7 @@ internal static class ScriptCommand
     /// Builds the pwsh argument list. Every item is a separate ArgumentList entry, so paths with spaces are
     /// never re-quoted.
     /// </summary>
-    public static IReadOnlyList<string> ForEnroll(string scripts, string root, string profile, string apiUrl) =>
+    public static IReadOnlyList<string> ForEnroll(string scripts, string root, string apiUrl) =>
     [
         "-NoProfile",
         "-NonInteractive",
@@ -14,8 +14,6 @@ internal static class ScriptCommand
         Path.Combine(scripts, "Set-LocalScenarioConfig.ps1"),
         "-ApiUrl",
         apiUrl,
-        "-Profile",
-        profile,
         "-Root",
         root,
     ];

@@ -50,14 +50,18 @@ var resetOnStart = !bool.TryParse(builder.Configuration["LocalRepos:ResetOnStart
 // provisioning is done. Default false: the scheduler is opt-in in local mode (start it from the
 // dashboard or `aspire resource scheduler start`). A missing or unparseable value means false.
 var runOnStart = bool.TryParse(builder.Configuration["LocalRepos:RunOnStart"], out var runValue) && runValue;
-// LocalRepos:Profile (env var LocalRepos__Profile): the settings profile enrolled at startup, one of
-// baseline|patch|major|prerelease. Passed through as given; local-scenarios-enroll validates it, so a
-// bad value fails that resource rather than the AppHost.
-var profile = builder.Configuration["LocalRepos:Profile"];
-if (string.IsNullOrWhiteSpace(profile))
+// LocalRepos:Profile (env var LocalRepos__Profile) is obsolete and ignored: each scenario repo carries its
+// own settings (tools/local-scenarios/scenarios.psd1). A non-blank value only prints a notice.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["LocalRepos:Profile"]))
 {
-    profile = "baseline";
+    Console.WriteLine("AppHost: LocalRepos__Profile is obsolete and ignored: each scenario repo carries its own settings (see docs/local-testing.md).");
 }
+
+// Scheduler:DevLoopEnabled / Scheduler:DevLoopIntervalSeconds (env vars Scheduler__DevLoopEnabled and
+// Scheduler__DevLoopIntervalSeconds) are forwarded to the scheduler resource when set, so locally it can
+// act as a real tick (due and not-due behaviour) with no code edits. Unset: nothing is forwarded.
+var devLoopEnabled = builder.Configuration["Scheduler:DevLoopEnabled"];
+var devLoopInterval = builder.Configuration["Scheduler:DevLoopIntervalSeconds"];
 
 // --- Local scenario provisioning (local mode only) ---
 // local-scenarios builds or confirms <root> (feed, repos, prs) with tools/local-scenarios, and
@@ -79,7 +83,7 @@ if (localReposEnabled)
     localScenarios = builder.AddProject<Projects.LocalScenarioSetup>("local-scenarios")
         .WithArgs(provisionArgs.ToArray());
 
-    // Explicit start: the fast reset between profiles or runs, without a rebuild.
+    // Explicit start: the fast reset between runs, without a rebuild.
     builder.AddProject<Projects.LocalScenarioSetup>("local-scenarios-reset")
         .WithArgs("reset", "--scripts", scriptsDir, "--root", localRoot)
         .WaitForCompletion(localScenarios)
@@ -96,8 +100,12 @@ IResourceBuilder<ProjectResource> WithLocalRepos(IResourceBuilder<ProjectResourc
         : project;
 
 Console.WriteLine(localReposEnabled
-    ? $"AppHost: repository mode Local (root {localRoot}); profile {profile}; reset on start {(resetOnStart ? "true" : "false")}; scheduler {(runOnStart ? "runs on start" : "explicit start")}; model {(modelEnabled ? "enabled" : "disabled")}"
+    ? $"AppHost: repository mode Local (root {localRoot}); reset on start {(resetOnStart ? "true" : "false")}; scheduler {(runOnStart ? "runs on start" : "explicit start")}; model {(modelEnabled ? "enabled" : "disabled")}"
     : $"AppHost: repository mode AzureDevOps; model {(modelEnabled ? "enabled" : "disabled")}");
+if (!string.IsNullOrWhiteSpace(devLoopEnabled) || !string.IsNullOrWhiteSpace(devLoopInterval))
+{
+    Console.WriteLine($"AppHost: scheduler dev loop forwarded (Scheduler__DevLoopEnabled={devLoopEnabled ?? "(unset)"}; Scheduler__DevLoopIntervalSeconds={devLoopInterval ?? "(unset)"})");
+}
 
 // --- API (minimal API, vertical slice) ---
 var api = builder.AddProject<Projects.AutoRemediator_Api>("api")
@@ -115,14 +123,14 @@ WithLocalRepos(api);
 // locally, but a non-Development launch profile would make this check fail and block the waiters.
 // The enroll resource gets the API URL from service discovery (WithReference), never a fixed port.
 // Nothing but the scheduler (and only when RunOnStart=true) waits for it, so a failed enrollment
-// (for example a bad LocalRepos__Profile) leaves api, web and remediation running.
+// (for example an unreachable API) leaves api, web and remediation running.
 IResourceBuilder<ProjectResource>? enroll = null;
 if (localReposEnabled)
 {
     api.WithHttpHealthCheck("/health");
 
     enroll = builder.AddProject<Projects.LocalScenarioSetup>("local-scenarios-enroll")
-        .WithArgs("enroll", "--scripts", scriptsDir, "--root", localRoot, "--profile", profile)
+        .WithArgs("enroll", "--scripts", scriptsDir, "--root", localRoot)
         .WithReference(api)
         .WaitFor(api);
 }
@@ -145,6 +153,14 @@ var scheduler = builder.AddProject<Projects.AutoRemediator_Worker_Scheduler>("sc
     .WaitFor(storage)
     .WaitFor(serviceBus);
 WithLocalRepos(scheduler);
+if (!string.IsNullOrWhiteSpace(devLoopEnabled))
+{
+    scheduler.WithEnvironment("Scheduler__DevLoopEnabled", devLoopEnabled);
+}
+if (!string.IsNullOrWhiteSpace(devLoopInterval))
+{
+    scheduler.WithEnvironment("Scheduler__DevLoopIntervalSeconds", devLoopInterval);
+}
 if (localReposEnabled && !runOnStart)
 {
     // Opt-in in local mode: starts on demand (the dashboard, or `aspire resource scheduler start`).

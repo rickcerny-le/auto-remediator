@@ -98,12 +98,11 @@ aspire resource scheduler start     # once api is running and local-scenarios-en
 
 Nothing needs generating or enrolling by hand: the AppHost builds the scenario feed and demo repos
 under `.local` when they are missing or stale (about 85 s cold, a few seconds when current),
-enrolls them through the API with a settings profile, and gives `api`, `scheduler` and
+enrolls them through the API (a global baseline plus each repo's own settings), and gives `api`, `scheduler` and
 `remediation` `AzureDevOps__Mode=Local`. The scheduler is not automatic: start it when you want a
-pass. Other variables: `LocalRepos__Root` (default `.local`), `LocalRepos__Profile` (`baseline`,
-`patch`, `major` or `prerelease`; default `baseline`), `LocalRepos__ResetOnStart` (default `true`)
+pass. Other variables: `LocalRepos__Root` (default `.local`), `LocalRepos__ResetOnStart` (default `true`)
 and `LocalRepos__RunOnStart` (default `false`; `true` starts the scheduler automatically). To reset
-the repos between profiles without a rebuild, start the `local-scenarios-reset` resource
+the repos between runs without a rebuild, start the `local-scenarios-reset` resource
 (`aspire resource local-scenarios-reset start`).
 
 With `Model__Enabled=false`, remediation is non-agentic: a build that fails after the bump ends
@@ -237,7 +236,7 @@ caveat should not be treated as resolved by anything in this feature.
 | `LocalRepos:Enabled` | AppHost setting, default `false` (a missing or unparseable value counts as false). `true` (env var `LocalRepos__Enabled`) sets `AzureDevOps__Mode=Local`, `AzureDevOps__LocalRoot=<root>\repos` and `AzureDevOps__LocalPullRequestsRoot=<root>\prs` on `api`, `scheduler` and `remediation`. Independent of `Model:Enabled`. |
 | `LocalRepos:Root` | AppHost setting, default the repository's `.local` folder. Root of the `repos` and `prs` folders used in local repository mode. |
 | `LocalRepos:ResetOnStart` | AppHost setting, local mode only, default `true` (a missing or unparseable value counts as true). On every start the `local-scenarios` resource also resets the scenario repos and `<root>\prs` to a clean state (no rebuild). `false` (env var `LocalRepos__ResetOnStart`) skips the reset. |
-| `LocalRepos:Profile` | AppHost setting, local mode only, default `baseline`. The settings profile `local-scenarios-enroll` applies at startup: `baseline`, `patch`, `major` or `prerelease` (env var `LocalRepos__Profile`, lower case). An invalid value fails only the enroll resource. |
+| `LocalRepos:Profile` | Obsolete and ignored (env var `LocalRepos__Profile`): each scenario repo carries its own settings. A non-blank value only prints a notice at AppHost startup. |
 | `LocalRepos:RunOnStart` | AppHost setting, local mode only, default `false` (a missing or unparseable value counts as false). In local mode `scheduler` is explicit-start: start it from the dashboard or `aspire resource scheduler start`. `true` (env var `LocalRepos__RunOnStart`) starts it automatically once provisioning has finished. |
 | `Agents:MaxAttempts` / `Agents:TokenBudget` / `Agents:AttemptTimeout` | Bounds on the AI loop: attempts per run (3), tokens per run (120k), and per-model-call timeout (3m). |
 | `Scheduler:DevLoopEnabled` / `Scheduler:DevLoopIntervalSeconds` | Local-only re-trigger of the run-once scheduler. |

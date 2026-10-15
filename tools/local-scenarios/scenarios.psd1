@@ -67,6 +67,18 @@
     # (left over from earlier spikes).
     ObsoleteIds = @('Contoso.Core')
 
+    # The one global baseline every repo inherits unless its own Settings say InheritGlobal = $false.
+    # Same keys as the repo Settings below (without InheritGlobal); the literal {feed} becomes the absolute local
+    # feed path at enrollment. No default schedule: the built-in daily "0 0 * * *" applies.
+    GlobalSettings = @{
+        Patterns        = @('Contoso.*', 'Fabrikam.*', 'Northwind.*', 'Tailspin.*')
+        Excludes        = @()
+        Feeds           = @('{feed}')
+        Ignore          = @()
+        Strategy        = 'Minor'
+        AllowPrerelease = $false
+    }
+
     # Demo repos (.local/repos/<Name>). Enrolled as local/scenarios/<Name>.
     #
     #   Layout       : Cpm (Directory.Packages.props) | PerProject (Version= on each PackageReference)
@@ -77,82 +89,96 @@
     #   AgentFix     : adds branch scenario/agent-fix that bumps Package to Version and fixes the consumer call
     #   NoFolder     : enrolled but never created on disk
     #   Enabled / TargetBranch : used by Set-LocalScenarioConfig.ps1 (defaults true / main)
-    #   Outcomes     : expected result per settings profile, written into the repo README
+    #   Expected     : the expected result, written into the repo README
+    #   Settings     : optional per-repo settings sent at enrollment (missing = inherit the global baseline).
+    #                  Keys: InheritGlobal (default $true), Patterns, Excludes, Feeds ({feed} = local feed path),
+    #                  Ignore, Strategy, AllowPrerelease, Schedule (cron)
     Repos = @(
         @{ Name = 'patch-bump'; Layout = 'Cpm'
-           Summary = 'Central package management, one patch-only package that is two patches behind.'
+           Summary = 'Central package management, one patch-only package that is two patches behind. Per-repo strategy Patch and its own 03:00 schedule.'
            Packages = @(@{ Id = 'Contoso.Logging'; Version = '1.2.0' })
-           Outcomes = @{ baseline = 'Contoso.Logging -> 1.2.3, Completed'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Settings = @{ Strategy = 'Patch'; Schedule = '0 3 * * *' }
+           Expected = 'Contoso.Logging 1.2.0 -> 1.2.3, Completed' }
 
         @{ Name = 'minor-bump'; Layout = 'PerProject'; Solution = $true
            Summary = 'Two projects (src/Api, src/Worker) and a solution, both declaring Contoso.Http 2.1.0 with Version= on the reference.'
            Projects = @('src/Api', 'src/Worker')
            Packages = @(@{ Id = 'Contoso.Http'; Version = '2.1.0' })
-           Outcomes = @{ baseline = 'Contoso.Http -> 2.4.1, both csproj edited, Completed'; patch = '-> 2.1.3'; major = '-> 3.0.0'; prerelease = '-> 2.4.1' } }
+           Expected = 'Contoso.Http -> 2.4.1, both csproj edited, Completed' }
 
         @{ Name = 'major-compiles'; Layout = 'Cpm'
-           Summary = 'A major bump (Northwind.Serialization 1.4.0 -> 2.0.0) whose API change is additive, so it compiles.'
+           Summary = 'A major bump (Northwind.Serialization 1.4.0 -> 2.0.0) whose API change is additive, so it compiles. Per-repo strategy Major.'
            Packages = @(@{ Id = 'Northwind.Serialization'; Version = '1.4.0' })
-           Outcomes = @{ baseline = 'NoUpdates (policy cap)'; patch = 'NoUpdates'; major = '-> 2.0.0, Completed'; prerelease = 'NoUpdates' } }
+           Settings = @{ Strategy = 'Major' }
+           Expected = 'Northwind.Serialization -> 2.0.0, Completed' }
 
         @{ Name = 'major-breaking'; Layout = 'Cpm'
-           Summary = 'A major bump (Northwind.Messaging 3.2.0 -> 4.0.0) that removes MessageBus.Publish(string, string), so the consumer fails with CS1061.'
+           Summary = 'A major bump (Northwind.Messaging 3.2.0 -> 4.0.0) that removes MessageBus.Publish(string, string), so the consumer fails with CS1061. Per-repo strategy Major.'
            Packages = @(@{ Id = 'Northwind.Messaging'; Version = '3.2.0' })
-           Outcomes = @{ baseline = 'NoUpdates'; patch = 'NoUpdates'; major = 'VerificationFailed, CS1061, 0 attempts, "No model is configured" transcript, no branch'; prerelease = 'NoUpdates' } }
+           Settings = @{ Strategy = 'Major' }
+           Expected = 'VerificationFailed, CS1061, 0 attempts, "No model is configured" transcript, no branch' }
 
         @{ Name = 'up-to-date'; Layout = 'PerProject'
            Summary = 'Already on the newest Contoso.Logging.'
            Packages = @(@{ Id = 'Contoso.Logging'; Version = '1.2.3' })
-           Outcomes = @{ baseline = 'NoUpdates; the dependency map shows UpToDate'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Expected = 'NoUpdates; the dependency map shows UpToDate' }
 
         @{ Name = 'no-matches'; Layout = 'PerProject'
-           Summary = 'Only a package that no targeting pattern matches.'
+           Summary = 'Only a package that no global targeting pattern matches (AdventureWorks is not in the global patterns).'
            Packages = @(@{ Id = 'AdventureWorks.Text'; Version = '1.0.0' })
-           Outcomes = @{ baseline = 'NoUpdates; nothing matched'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Expected = 'NoUpdates; nothing matched' }
+
+        @{ Name = 'local-only'; Layout = 'PerProject'
+           Summary = 'Does not inherit the global baseline: its own patterns select only AdventureWorks.*. It also declares Contoso.Logging, which the global patterns would update, to prove the global settings are not inherited.'
+           Packages = @(@{ Id = 'AdventureWorks.Text'; Version = '1.0.0' }, @{ Id = 'Contoso.Logging'; Version = '1.2.0' })
+           Settings = @{ InheritGlobal = $false; Patterns = @('AdventureWorks.*'); Feeds = @('{feed}') }
+           Expected = 'AdventureWorks.Text 1.0.0 -> 1.5.0, Completed; Contoso.Logging stays 1.2.0 and is not in the map (no Contoso/Fabrikam/Northwind/Tailspin package is considered)' }
 
         @{ Name = 'ignored-package'; Layout = 'Cpm'
-           Summary = 'Tailspin.Core is updatable; Tailspin.Legacy.Data matches the ignore glob Tailspin.Legacy.*.'
+           Summary = 'Tailspin.Core is updatable; Tailspin.Legacy.Data matches the repo ignore glob Tailspin.Legacy.*.'
            Packages = @(@{ Id = 'Tailspin.Core'; Version = '1.0.0' }, @{ Id = 'Tailspin.Legacy.Data'; Version = '1.0.0' })
-           Outcomes = @{ baseline = 'Tailspin.Core -> 1.0.2 only; Tailspin.Legacy.Data shows Ignored'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Settings = @{ Ignore = @('Tailspin.Legacy.*') }
+           Expected = 'Tailspin.Core -> 1.0.2 only; Tailspin.Legacy.Data shows Ignored' }
 
         @{ Name = 'prerelease'; Layout = 'Cpm'
-           Summary = 'Fabrikam.Telemetry has a 1.1.0-beta.2 pre-release on the feed.'
+           Summary = 'Fabrikam.Telemetry has a 1.1.0-beta.2 pre-release on the feed. Per-repo AllowPrerelease.'
            Packages = @(@{ Id = 'Fabrikam.Telemetry'; Version = '1.0.0' })
-           Outcomes = @{ baseline = '-> 1.0.1'; patch = '-> 1.0.1'; major = '-> 1.0.1'; prerelease = '-> 1.1.0-beta.2' } }
+           Settings = @{ AllowPrerelease = $true }
+           Expected = 'Fabrikam.Telemetry -> 1.1.0-beta.2' }
 
         @{ Name = 'family-alignment'; Layout = 'Cpm'
            Summary = 'Fabrikam.Data 1.2.0 needs Fabrikam.Data.Abstractions 2.0.0, which forces an escalation beyond policy.'
            Packages = @(@{ Id = 'Fabrikam.Data.Abstractions'; Version = '1.0.0' }, @{ Id = 'Fabrikam.Data'; Version = '1.0.0' }, @{ Id = 'Fabrikam.Data.SqlServer'; Version = '1.0.0' })
-           Outcomes = @{ baseline = 'SqlServer and Data -> 1.2.0; Abstractions -> 2.0.0 as collateral beyond policy; Completed'; patch = 'NoUpdates (to confirm)'; major = 'all to the highest (Abstractions matched)'; prerelease = 'as baseline' } }
+           Expected = 'SqlServer and Data -> 1.2.0; Abstractions -> 2.0.0 as collateral beyond policy; Completed' }
 
         @{ Name = 'restore-conflict'; Layout = 'Cpm'
            Summary = 'Fabrikam.Reporting 1.1.0 depends on Fabrikam.Data.Abstractions 3.x, which never exists, so restore fails.'
            Packages = @(@{ Id = 'Fabrikam.Reporting'; Version = '1.0.0' }, @{ Id = 'Fabrikam.Data.Abstractions'; Version = '1.0.0' })
-           Outcomes = @{ baseline = 'Reporting -> 1.1.0; VerificationFailed with an NU diagnostic; the AI loop is not entered'; patch = 'NoUpdates'; major = 'as baseline, plus Abstractions -> 2.0.0'; prerelease = 'as baseline' } }
+           Expected = 'Reporting -> 1.1.0; VerificationFailed with an NU diagnostic; the AI loop is not entered' }
 
         @{ Name = 'lock-file'; Layout = 'Cpm'; LockFile = $true
            Summary = 'RestorePackagesWithLockFile with a committed packages.lock.json (no locked mode).'
            Packages = @(@{ Id = 'Contoso.Logging'; Version = '1.2.0' })
-           Outcomes = @{ baseline = '-> 1.2.3; the pushed commit includes the regenerated lock file'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Expected = '-> 1.2.3; the pushed commit includes the regenerated lock file' }
 
         @{ Name = 'held-review'; Layout = 'Cpm'
            AgentFix = @{ Package = 'Northwind.Messaging'; Version = '4.0.0' }
-           Summary = 'Branch scenario/agent-fix holds the change an AI agent would have proposed (Northwind.Messaging 4.0.0 plus PublishAsync). Seeded as AwaitingReview by task 08.'
+           Summary = 'Branch scenario/agent-fix holds the change an AI agent would have proposed (Northwind.Messaging 4.0.0 plus PublishAsync). Seeded as AwaitingReview by the held-run-seeder.'
            Packages = @(@{ Id = 'Northwind.Messaging'; Version = '3.2.0' })
-           Outcomes = @{ baseline = 'Seeded AwaitingReview; the scheduler records SkippedHeld'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Expected = 'Seeded AwaitingReview; Run now is refused (409); a due scheduler pass records SkippedHeld' }
 
         @{ Name = 'missing-branch'; Layout = 'Cpm'; TargetBranch = 'develop'
            Summary = 'Only main exists, but the repo is enrolled with target branch develop.'
            Packages = @(@{ Id = 'Contoso.Logging'; Version = '1.2.0' })
-           Outcomes = @{ baseline = 'NoUpdates (mirrors Azure DevOps; known gap)'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Expected = 'NoUpdates (mirrors Azure DevOps; known gap)' }
 
         @{ Name = 'does-not-exist'; NoFolder = $true
            Summary = 'Enrolled but there is no folder.'
-           Outcomes = @{ baseline = 'NoUpdates (mirrors Azure DevOps; known gap)'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Expected = 'NoUpdates (mirrors Azure DevOps; known gap)' }
 
         @{ Name = 'disabled-repo'; Layout = 'Cpm'; Enabled = $false
-           Summary = 'Same shape as patch-bump, enrolled with Enabled=false.'
+           Summary = 'Same shape as patch-bump (inherits the global baseline), enrolled with Enabled=false.'
            Packages = @(@{ Id = 'Contoso.Logging'; Version = '1.2.0' })
-           Outcomes = @{ baseline = 'No run is created'; patch = 'same'; major = 'same'; prerelease = 'same' } }
+           Expected = 'No scheduled run; Run now runs it (Contoso.Logging 1.2.0 -> 1.2.3, Completed, Manual) and it stays disabled' }
     )
 }

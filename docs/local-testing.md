@@ -39,8 +39,8 @@ Nothing else is needed: no script to run first and no enrollment step. The AppHo
    40 s after `aspire start` returns on a warm start, and about 90 s after it returns on a cold start (the rebuild is
    the longer wait; `api` came up 2 s after it finished). `web` waits for `api`.
 3. **`local-scenarios-enroll`** waits for `api` to pass its `/health` check, then enrolls every scenario repo and
-   applies the settings profile (`baseline` unless you set `LocalRepos__Profile`). It finishes in under a second.
-   A default start enrolls 15 repositories: 14 enabled plus `disabled-repo`, which is enrolled disabled.
+   applies the global baseline and each repo's own settings from the catalogue. It finishes in under a second.
+   A default start enrolls 16 repositories: 15 enabled plus `disabled-repo`, which is enrolled disabled.
 4. **`scheduler`** does **not** start by itself in local mode. When the resources are `Running` and enrollment has
    finished, start a pass over every enabled repo:
 
@@ -82,12 +82,13 @@ Set these as environment variables before `aspire start`.
 | --- | --- | --- |
 | `LocalRepos__Enabled` | `false` | Turns on local repository mode and the resources described here. |
 | `LocalRepos__Root` | `<repo>/.local` | Folder holding `feed`, `repos` and `prs`. Used as an absolute path; a different root has its own fingerprint. |
-| `LocalRepos__Profile` | `baseline` | Settings profile enrolled at startup: `baseline`, `patch`, `major` or `prerelease` (lower case). |
+| `LocalRepos__Profile` | (obsolete) | Ignored: each scenario repo carries its own settings. A non-blank value only prints a notice at startup. |
+| `Scheduler__DevLoopEnabled` / `Scheduler__DevLoopIntervalSeconds` | unset | When set before `aspire start`, forwarded to `scheduler` so it keeps running as a real tick (due and not-due behaviour). |
 | `LocalRepos__ResetOnStart` | `true` | When the output is current, also run the fast reset on every start. `false` skips it (a rebuild still happens when stale). |
 | `LocalRepos__RunOnStart` | `false` | `true` makes `scheduler` wait for enrollment and start automatically. |
 | `Model__Enabled` | `true` | `false` leaves out Ollama and the model; see [section 3](#3-non-agentic-mode-the-model-is-disabled). |
 
-An unparseable boolean counts as the default. The profiles are the table in [section 4](#4-enroll-a-profile-manually).
+An unparseable boolean counts as the default. The per-repo settings are the table in [section 7](#7-expected-results-and-actual-results).
 
 ### Resources
 
@@ -95,7 +96,7 @@ An unparseable boolean counts as the default. The profiles are the table in [sec
 | --- | --- | --- |
 | `local-scenarios` | automatic | Provision: rebuild when stale, otherwise skip, then fast reset unless `ResetOnStart=false`. |
 | `local-scenarios-reset` | explicit | The fast reset only (see [Resetting between profiles](#resetting-between-profiles)). |
-| `local-scenarios-enroll` | automatic, after `api` is healthy | Enrolls the repos and applies `LocalRepos__Profile`. |
+| `local-scenarios-enroll` | automatic, after `api` is healthy | Enrolls the repos with their own settings and applies the global baseline. |
 | `scheduler` | explicit (unless `RunOnStart=true`) | Runs one pass over every enabled repo, then exits. |
 | `held-run-seeder` | explicit | Seeds the held run for [the review gate](#8-review-gate). |
 
@@ -251,26 +252,21 @@ agent reports itself unavailable, so there is **no AI repair**:
 Leaving the model enabled (the default) starts Ollama with `phi4`, which is a large first download, and makes
 compile-break repairs possible. The expected results below assume the model is **disabled**.
 
-## 4. Enroll a profile manually
+## 4. Enroll manually
 
-Enrollment happens at startup (see [section 1](#1-quick-start)). Run the script yourself to switch profile against a
-running app or to enroll only some repos with `-Only`:
+Enrollment happens at startup (see [section 1](#1-quick-start)). Run the script yourself to reset every repo (and the
+global baseline) to the catalogue against a running app, or to enroll only some repos with `-Only`:
 
 ```powershell
-pwsh -NoProfile -File tools/local-scenarios/Set-LocalScenarioConfig.ps1 -ApiUrl http://localhost:5228 -Profile baseline
+pwsh -NoProfile -File tools/local-scenarios/Set-LocalScenarioConfig.ps1 -ApiUrl http://localhost:5228
 ```
 
-This lists, then creates or updates each repo by name (so it is safe to repeat) and applies the global targeting
-settings for the profile. `-Only a,b` enables just those repos and disables the rest. The Configuration page in the
+This lists, then creates or updates each repo by name (so it is safe to repeat), sends each repo's settings and applies
+the global baseline, so settings edited in the UI are reset to the catalogue. `-Only a,b` enables just those repos and disables the rest. The Configuration page in the
 UI shows the same repositories and settings and can edit them (enter feed `C:\...\.local\feed`, patterns
 `Contoso.*`, `Fabrikam.*`, `Northwind.*`, `Tailspin.*`, ignore `Tailspin.Legacy.*`).
 
-| Profile | Strategy | Allow pre-release |
-| --- | --- | --- |
-| baseline | Minor | no |
-| patch | Patch | no |
-| major | Major | no |
-| prerelease | Minor | yes |
+The per-repo settings are in the table in [section 7](#7-expected-results-and-actual-results).
 
 `disabled-repo` is enrolled disabled, `missing-branch` targets `develop`, and `does-not-exist` has no folder.
 
@@ -304,8 +300,8 @@ automatically.
   and after content, no action buttons. It should list exactly the files of
   `git -C .local/repos/<repo> diff --name-only main..autoremediator/dependency-updates`.
   The same data is `GET /api/runs/<id>/pull-request-diff`.
-- **Dependency Map** (`/dependency-map`): `Outdated`, `UpToDate` or `Ignored` per package against the active
-  profile. It is computed live from the repo and current settings, so it changes when you switch profile.
+- **Dependency Map** (`/dependency-map`): `Outdated`, `UpToDate` or `Ignored` per package against each
+  repo's effective settings. It is computed live from the repo and current settings, so it changes when you edit them.
 - Git state: `git -C .local/repos/<repo> log --oneline --all` and
   `git -C .local/repos/<repo> diff main..autoremediator/dependency-updates`.
 - PR records: `.local/prs/<repo>/*.json` with `sourceBranch`, `targetBranch`, `baseCommit` (merge-base),
@@ -319,7 +315,52 @@ the update branch exists, `.local/prs/<repo>/1.json` exists, a PR link is shown 
 Where the Actual column says "as expected" the outcome matched the expected cell exactly (statuses, versions and
 flags were read from `/api/runs/<id>` and the git repo, not inferred).
 
-### baseline (Minor)
+### Per-repo settings (current)
+
+Each scenario repo carries its own settings (`tools/local-scenarios/scenarios.psd1`) over one global baseline
+(patterns `Contoso.*`, `Fabrikam.*`, `Northwind.*`, `Tailspin.*`, the local feed, no excludes, no ignore, Minor, no
+pre-release, built-in daily `0 0 * * *`). One scheduler pass (or Run now per repo) reproduces every scenario, with
+`Model__Enabled=false`. The four global profiles and the switch-between-profiles routine no longer exist. "Actual" is
+from the task 10 verification (fresh rebuild, `LocalRepos__Enabled=true`, `Model__Enabled=false`); statuses and updates
+were read from `/api/runs/<id>`, the dependency map and the git repos.
+
+| Repo | Settings | Expected | Actual |
+| --- | --- | --- | --- |
+| patch-bump | Strategy Patch, schedule `0 3 * * *` | Contoso.Logging 1.2.0 -> 1.2.3, Completed | as expected |
+| minor-bump | inherits | Contoso.Http -> 2.4.1, both csproj edited, Completed | as expected |
+| major-compiles | Strategy Major | Northwind.Serialization -> 2.0.0, Completed | as expected |
+| major-breaking | Strategy Major | VerificationFailed, CS1061, 0 attempts, "No model is configured" transcript, no branch | as expected |
+| up-to-date | inherits | NoUpdates; map UpToDate | as expected |
+| no-matches | inherits | NoUpdates; nothing matched (AdventureWorks is not in the global patterns) | as expected, no map entries |
+| local-only | InheritGlobal false, patterns `AdventureWorks.*`, feed | AdventureWorks.Text 1.0.0 -> 1.5.0, Completed; Contoso.Logging stays 1.2.0 and is not in the map | as expected |
+| ignored-package | Ignore `Tailspin.Legacy.*` | Tailspin.Core -> 1.0.2 only; Tailspin.Legacy.Data Ignored | as expected |
+| prerelease | AllowPrerelease | Fabrikam.Telemetry -> 1.1.0-beta.2 | as expected |
+| family-alignment | inherits | SqlServer and Data -> 1.2.0; Abstractions -> 2.0.0 collateral beyond policy; Completed | as expected |
+| restore-conflict | inherits | Reporting -> 1.1.0; VerificationFailed with an NU diagnostic; loop not entered | as expected (NU1605 x3) |
+| lock-file | inherits | -> 1.2.3 with the regenerated lock file | as expected |
+| held-review | inherits | Seeded AwaitingReview; Run now refused (409); a due scheduler pass records SkippedHeld | as expected (see below) |
+| missing-branch | inherits (target `develop`) | NoUpdates (known gap) | as expected |
+| does-not-exist | inherits (no folder) | NoUpdates (known gap) | as expected |
+| disabled-repo | inherits (Enabled false) | No scheduled run; Run now runs it (Contoso.Logging 1.2.0 -> 1.2.3, Completed, Manual) and it stays disabled | as expected |
+
+Observations from the same session:
+
+- The first scheduler tick enqueued 15 runs (every enabled repo; `disabled-repo` excluded); later ticks reported
+  "not due 15" because each repo's next cron occurrence is in the future. With `Scheduler__DevLoopEnabled=true` and
+  `Scheduler__DevLoopIntervalSeconds=60` before `aspire start` (the AppHost forwards both to `scheduler`) the scheduler
+  keeps running as a real tick.
+- A due tick ran only `patch-bump` (its `0 3 * * *` schedule passed) and recorded `Skipped local/scenarios/held-review:
+  held for review` ("enqueued 1, skipped held 1, not due 13"). To make `held-review` due on demand, give it a
+  `*/15 * * * *` schedule through the repository settings API; the minimum accepted frequency is every 15 minutes.
+- `POST /api/repositories/<id>/run` on `held-review` returned 409 `held`; on `disabled-repo` it returned 202 and the run
+  was `Completed`, trigger `Manual`, with the repository still disabled.
+- Editing a repo's settings and re-running `Set-LocalScenarioConfig.ps1 -ApiUrl <url>` put the catalogue settings back.
+- `LocalRepos__Profile` is obsolete: setting it prints `AppHost: LocalRepos__Profile is obsolete and ignored ...` once
+  at startup and changes nothing.
+
+The per-profile matrices below are the 002/003 results, kept as findings; their "profile" columns no longer apply.
+
+### baseline (Minor), 002/003 profile results
 
 | Repo | Expected | Actual |
 | --- | --- | --- |
@@ -407,9 +448,12 @@ For every `Completed` run in every pass, the file list from `/api/runs/<id>/pull
 `held-review` after Approve: `Directory.Packages.props`, `src/App/Program.cs`). The page-level Playwright tests also
 passed against these runs (see [Automated checks](#9-automated-checks-against-the-running-app)).
 
-## Profiles and resetting between them
+## Resetting between runs (the profiles are gone)
 
-Settings are global, so switching profile changes behaviour for every repo. A re-run reuses the existing
+The global profiles no longer exist: per-repo settings are applied at enrollment. The text below keeps the 002/003
+reasoning about resetting; "profile" in it means the old global profiles.
+
+Settings were global, so switching profile changed behaviour for every repo. A re-run reuses the existing
 `autoremediator/dependency-updates` branch and PR record, which is where the PRD "base mismatch in planning" known
 defect can show up. So reset before each profile.
 
@@ -532,9 +576,7 @@ the first run whose diff link is set; it passed here after a clean baseline pass
   within 120 s), fix the cause, run `aspire resource local-scenarios-enroll start`, then start `scheduler`. If you set
   `LocalRepos__RunOnStart=true`, the scheduler did not start either (it waits for enrollment), so start it yourself
   after enrollment succeeds.
-- **An invalid profile**: `LocalRepos__Profile '<value>' is not valid; use baseline, patch, major or prerelease.` The
-  names are case-sensitive and lower case. Only `local-scenarios-enroll` fails (`Finished 1`); the rest of the app runs.
-  Fix the variable and restart the AppHost, or enroll by hand with `Set-LocalScenarioConfig.ps1 -Profile <p>`.
+- **`LocalRepos__Profile`**: obsolete. It is ignored (the AppHost prints a one-line notice); nothing fails.
 - **Run ends `Skipped` with NU1301**: a feed path problem (source unreachable is classed as environmental, and the
   change would still be pushed "verification skipped"). The generated `NuGet.config` files use absolute paths; a
   relative path in a demo repo's `NuGet.config` breaks inside the temp workspace.
