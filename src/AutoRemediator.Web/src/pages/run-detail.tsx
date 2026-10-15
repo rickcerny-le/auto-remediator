@@ -4,7 +4,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { FileComparison } from '@/components/file-comparison'
 import { DataTable } from '@/components/data-table'
 import { columnHelper } from '@/lib/table'
 import { Pill } from '@/components/pill'
@@ -12,8 +12,9 @@ import { PageHeader } from '@/components/page-header'
 import { RunStatus } from '@/components/run-cells'
 import { api, ApiError, errorMessage } from '@/lib/api'
 import { formatDate, location, plural } from '@/lib/format'
+import { cn, focusRing } from '@/lib/utils'
 import { verificationLabel, verificationTone } from '@/lib/status'
-import type { ReviewCommand, RunDiagnostic, RunUpdate } from '@/lib/types'
+import type { PullRequestDiffFile, ReviewCommand, RunDiagnostic, RunUpdate } from '@/lib/types'
 import { useLoad, useTitle } from '@/hooks'
 
 const diag = columnHelper<RunDiagnostic>()
@@ -57,10 +58,64 @@ function Section({ title, badge, link, children, testId }: { title: string; badg
 function ApiLink({ href, testId, children }: { href: string; testId: string; children: ReactNode }) {
   // The API returns these as relative /api URLs, which resolve against this origin.
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="font-mono text-sm text-info hover:underline" data-testid={testId}>
+    <a href={href} target="_blank" rel="noreferrer" className={cn(focusRing, 'rounded-sm font-mono text-sm text-info hover:underline')} data-testid={testId}>
       {children}
       <span className="sr-only"> (opens in a new tab)</span>
     </a>
+  )
+}
+
+const DID_NOT_EXIST = '(file did not exist)'
+
+function diffSide(file: PullRequestDiffFile, content: string | null): string {
+  if (file.isBinary) return '(binary file, not shown)'
+  return content ?? DID_NOT_EXIST
+}
+
+/**
+ * Read-only view of a local pull request. Fetched on its own, so a failure here never breaks the run page,
+ * and it has no actions: a run still ends at the pull request.
+ */
+function PullRequestDiffSection({ url }: { url: string }) {
+  const load = useCallback(() => api.pullRequestDiff(url), [url])
+  const { data: diff, error } = useLoad(load)
+
+  return (
+    <Section
+      title="Pull request changes"
+      badge={diff && <Pill tone="info">{plural(diff.files.length, 'file')}</Pill>}
+      testId="run-pr-diff"
+    >
+      {error !== undefined ? (
+        <p className="text-sm text-muted-foreground">Pull request changes are not available: {errorMessage(error)}</p>
+      ) : diff === undefined ? (
+        <p className="text-sm italic" role="status">Loading pull request changes…</p>
+      ) : (
+        <>
+          <p className="text-sm">
+            Read-only view of the local pull request from <span className="font-mono">{diff.sourceBranch}</span> to{' '}
+            <span className="font-mono">{diff.targetBranch}</span>, comparing base commit{' '}
+            <span className="font-mono">{diff.baseCommitId.slice(0, 8)}</span> with head commit{' '}
+            <span className="font-mono">{diff.headCommitId.slice(0, 8)}</span>.
+          </p>
+          {diff.files.length === 0 ? (
+            <p className="text-sm">The pull request has no file changes.</p>
+          ) : (
+            <FileComparison
+              itemTestId="pr-diff-file"
+              breakLongLines
+              items={diff.files.map((file) => ({
+                key: file.path,
+                label: `${file.changeKind}: ${file.path}`,
+                before: diffSide(file, file.originalContent),
+                after: diffSide(file, file.newContent),
+                note: file.isTruncated ? '(truncated) This file is larger than the display limit; only the first part is shown.' : undefined,
+              }))}
+            />
+          )}
+        </>
+      )}
+    </Section>
   )
 }
 
@@ -126,7 +181,7 @@ export function RunDetailPage() {
       )}
 
       <PageHeader title={run?.repositorySlug ?? 'Run detail'} titleClassName={run ? 'font-mono text-xl font-medium' : undefined}>
-        {run && <RunStatus status={run.status} />}
+        {run && <RunStatus status={run.status} trigger={run.trigger} />}
       </PageHeader>
 
       {error !== undefined ? (
@@ -145,7 +200,7 @@ export function RunDetailPage() {
               {run.finishedAtUtc && ` · Finished: ${formatDate(run.finishedAtUtc)}`}
             </p>
             {run.pullRequestUrl && (
-              <a href={run.pullRequestUrl} target="_blank" rel="noreferrer" className="text-info hover:underline" data-testid="run-pr-link">
+              <a href={run.pullRequestUrl} target="_blank" rel="noreferrer" className={cn(focusRing, 'rounded-sm text-info hover:underline')} data-testid="run-pr-link">
                 Pull request<span className="sr-only"> (opens in a new tab)</span>
               </a>
             )}
@@ -155,6 +210,8 @@ export function RunDetailPage() {
               </Alert>
             )}
           </Card>
+
+          {run.pullRequestDiffUrl && <PullRequestDiffSection url={run.pullRequestDiffUrl} />}
 
           {run.status === 'AwaitingReview' && (
             <Section title="Held for review" badge={<Pill tone="warn">awaiting a decision</Pill>} testId="review-panel">
@@ -199,25 +256,15 @@ export function RunDetailPage() {
                     <DataTable columns={diagnosticColumns} data={proposal.provokingDiagnostics} caption="Diagnostics that prompted the proposal" testId="proposal-diagnostics" className="mb-2" />
                   )}
 
-                  <Accordion type="multiple" defaultValue={proposal.files.map((f) => f.path)} className="rounded-md border px-4">
-                    {proposal.files.map((file) => (
-                      <AccordionItem key={file.path} value={file.path} data-testid="proposal-file">
-                        <AccordionTrigger className="font-mono">{`${file.origin}: ${file.path}`}</AccordionTrigger>
-                        <AccordionContent className="flex flex-wrap gap-3">
-                          <div className="min-w-[280px] flex-1">
-                            <div className="text-label text-muted-foreground">Before</div>
-                            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-label whitespace-pre-wrap">
-                              {file.originalContent ?? '(file did not exist)'}
-                            </pre>
-                          </div>
-                          <div className="min-w-[280px] flex-1">
-                            <div className="text-label text-muted-foreground">After</div>
-                            <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-label whitespace-pre-wrap">{file.newContent}</pre>
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    ))}
-                  </Accordion>
+                  <FileComparison
+                    itemTestId="proposal-file"
+                    items={proposal.files.map((file) => ({
+                      key: file.path,
+                      label: `${file.origin}: ${file.path}`,
+                      before: file.originalContent ?? DID_NOT_EXIST,
+                      after: file.newContent,
+                    }))}
+                  />
                 </>
               )}
 

@@ -31,8 +31,10 @@ public sealed class TargetingSettings
         IReadOnlyList<string> patterns,
         IReadOnlyList<string>? excludes = null,
         IReadOnlyList<string>? feeds = null,
-        UpdatePolicy? policy = null)
+        UpdatePolicy? policy = null,
+        string? defaultSchedule = null)
     {
+        DefaultSchedule = string.IsNullOrWhiteSpace(defaultSchedule) ? null : defaultSchedule.Trim();
         Patterns = patterns ?? [];
         Excludes = excludes ?? [];
         Feeds = feeds ?? [];
@@ -49,6 +51,9 @@ public sealed class TargetingSettings
     public IReadOnlyList<string> Feeds { get; }
 
     public UpdatePolicy Policy { get; }
+
+    /// <summary>Global default cron schedule (UTC) for repositories without their own; null = built-in default.</summary>
+    public string? DefaultSchedule { get; }
 
     public static TargetingSettings Empty => new([]);
 }

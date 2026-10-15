@@ -1,9 +1,19 @@
 import { Pill } from '@/components/pill'
 import { runStatusLabel, runStatusTone } from '@/lib/status'
 import { formatDate } from '@/lib/format'
+import { cn, focusRing } from '@/lib/utils'
 
-export function RunStatus({ status }: { status: string }) {
-  return <Pill tone={runStatusTone(status)}>{runStatusLabel(status)}</Pill>
+export function RunStatus({ status, trigger }: { status: string; trigger?: 'Scheduled' | 'Manual' }) {
+  const pill = <Pill tone={runStatusTone(status)}>{runStatusLabel(status)}</Pill>
+  if (trigger !== 'Manual') return pill
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {pill}
+      <Pill tone="info" testId="trigger-manual">
+        Manual
+      </Pill>
+    </span>
+  )
 }
 
 export function PullRequestLink({ url }: { url: string | null }) {
@@ -17,7 +27,7 @@ export function PullRequestLink({ url }: { url: string | null }) {
       href={url}
       target="_blank"
       rel="noreferrer"
-      className="text-info hover:underline"
+      className={cn(focusRing, 'rounded-sm text-info hover:underline')}
     >
       open<span className="sr-only"> (opens in a new tab)</span>
     </a>

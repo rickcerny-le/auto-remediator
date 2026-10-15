@@ -7,7 +7,7 @@ namespace AutoRemediator.Agents;
 
 /// <summary>
 /// Registers the Microsoft Agent Framework remediation agent over a chat client supplied by
-/// the Aspire AI Inference integration. The model connection comes from a connection
+/// the Aspire OllamaSharp integration. The model connection comes from a connection
 /// reference, so this registration is identical whether the model runs locally in
 /// development or in Azure. No network call is made at registration time.
 /// </summary>
@@ -24,7 +24,7 @@ public static class AgentsExtensions
         // only AI repair of compile breaks is unavailable.
         if (HasChatConnection(builder.Configuration))
         {
-            builder.AddAzureChatCompletionsClient(AgentsOptions.ChatConnectionName)
+            builder.AddOllamaApiClient(AgentsOptions.ChatConnectionName)
                 .AddChatClient();
         }
 

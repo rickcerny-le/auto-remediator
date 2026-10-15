@@ -20,12 +20,13 @@ public class AccessibilityTests
         var data = new TheoryData<string, string, string>();
         foreach (var scheme in new[] { "light", "dark" })
         {
-            // (name, path, selector that proves the page has rendered). "{run}" is replaced by a real run id.
+            // (name, path, scheme). "{run}" and "{repo}" are replaced by a real run / repository id.
             data.Add("overview", "/", scheme);
             data.Add("runs", "/runs", scheme);
             data.Add("run-detail", "/runs/{run}", scheme);
             data.Add("dependency-map", "/dependency-map", scheme);
             data.Add("configuration", "/configuration", scheme);
+            data.Add("repository", "/configuration/repositories/{repo}", scheme);
             data.Add("not-found", "/no/such/page", scheme);
         }
 
@@ -50,7 +51,23 @@ public class AccessibilityTests
         return Guid.NewGuid().ToString();
     }
 
-    private static async Task AssertNoViolationsAsync(IPage page, string what)
+    private static async Task<string> FirstRepositoryIdAsync(IPage page, string baseUrl)
+    {
+        var response = await page.APIRequest.GetAsync($"{baseUrl.TrimEnd('/')}/api/repositories");
+        if (response.Ok)
+        {
+            using var doc = JsonDocument.Parse(await response.BodyAsync());
+            foreach (var repo in doc.RootElement.EnumerateArray())
+            {
+                return repo.GetProperty("id").GetString()!;
+            }
+        }
+
+        // No repository exists: the not-found state of the page still has to be accessible.
+        return Guid.NewGuid().ToString();
+    }
+
+    internal static async Task AssertNoViolationsAsync(IPage page, string what)
     {
         var results = await page.RunAxe(new AxeRunOptions { RunOnly = new RunOnlyOptions { Type = "tag", Values = [.. Tags] } });
         var lines = results.Violations.Select(v =>
@@ -96,10 +113,51 @@ public class AccessibilityTests
             path = path.Replace("{run}", await FirstRunIdAsync(page, baseUrl));
         }
 
+        if (path.Contains("{repo}"))
+        {
+            path = path.Replace("{repo}", await FirstRepositoryIdAsync(page, baseUrl));
+        }
+
         await page.GotoAsync(baseUrl + path);
         await WaitForPageAsync(page);
 
         await AssertNoViolationsAsync(page, $"{name} ({scheme})");
+    }
+
+    [Theory]
+    [InlineData("light")]
+    [InlineData("dark")]
+    public async Task Run_detail_with_pull_request_diff_has_no_wcag_a_or_aa_violations(string scheme)
+    {
+        Assert.SkipWhen(
+            string.IsNullOrWhiteSpace(BaseUrl),
+            "Set WEB_BASE_URL to a running Web app to run the accessibility tests.");
+        var baseUrl = BaseUrl!.TrimEnd('/');
+
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync();
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            IgnoreHTTPSErrors = true,
+            ColorScheme = scheme == "dark" ? ColorScheme.Dark : ColorScheme.Light,
+            ViewportSize = new ViewportSize { Width = 1280, Height = 900 },
+        });
+        var page = await context.NewPageAsync();
+
+        var runId = await PullRequestDiffTests.FindRunWithDiffAsync(page, baseUrl);
+        Assert.SkipWhen(runId is null, "No run has a pull request diff (needs local repository mode and a Completed run).");
+
+        await page.GotoAsync($"{baseUrl}/runs/{runId}");
+        await WaitForPageAsync(page);
+
+        // The diff loads separately from the run, with its own text, so WaitForPageAsync does not cover it.
+        var section = page.GetByTestId("run-pr-diff");
+        await Assertions.Expect(section).ToBeVisibleAsync();
+        await Assertions.Expect(section.GetByText("Loading pull request changes…")).ToHaveCountAsync(0);
+        await Assertions.Expect(section.GetByTestId("pr-diff-file").First).ToBeVisibleAsync();
+        await SettleAsync(page);
+
+        await AssertNoViolationsAsync(page, $"run-detail-pr-diff ({scheme})");
     }
 
     [Fact]

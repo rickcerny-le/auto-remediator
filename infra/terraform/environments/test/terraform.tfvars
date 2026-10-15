@@ -16,7 +16,7 @@ tags = {
 # scheduler_image   = "<acr-login-server>/autoremediator/scheduler:latest"
 # remediation_image = "<acr-login-server>/autoremediator/remediation:latest"
 
-scheduler_cron_expression         = "0 */6 * * *"
+scheduler_tick_cron_expression    = "*/15 * * * *"
 remediation_queue_scale_threshold = 5
 
 foundry_model_name     = "gpt-4o-mini"

@@ -1,7 +1,7 @@
 # Auto Dependency Remediator
 
 Automatically updates dependencies across configured Azure DevOps repositories, opens
-pull requests, and runs an AI loop (Microsoft Agent Framework + Azure AI Foundry) to
+pull requests, and runs an AI loop (Microsoft Agent Framework + Ollama) to
 address breaking changes the updates introduce. Runs are timed, queued, and processed
 by horizontally scalable workers. A React web UI configures the tool and shows status.
 
@@ -16,7 +16,7 @@ src/
   AutoRemediator.Web                # React + TypeScript SPA (Vite, shadcn/ui + Tailwind, TanStack Table)
   AutoRemediator.Worker.Scheduler   # Run-once trigger -> enqueues remediation runs
   AutoRemediator.Worker.Remediation # Queue consumer -> runs the remediation/AI loop
-  AutoRemediator.Agents             # Microsoft Agent Framework agents (Azure AI Foundry)
+  AutoRemediator.Agents             # Microsoft Agent Framework agents (Ollama)
   AutoRemediator.Domain             # Domain entities/logic
   AutoRemediator.Contracts          # Messages + DTOs shared across services
   AutoRemediator.Shared             # Cross-cutting primitives (Result, guards, base types)
@@ -45,11 +45,11 @@ over HTTP only, through same-origin `/api/...` URLs.
 - Node.js 24 with npm, for the web app. The AppHost runs `npm install` for it on start.
 - A container runtime (Docker Desktop or Podman) **running**, to start the local
   Azurite (Storage) and Azure Service Bus emulators when you run the AppHost.
-- [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/get-started)
-  — **only needed to exercise the AI remediation loop.** The AppHost models the model
-  resource so it runs locally in development; deployed environments use the provisioned
-  Azure AI Foundry account instead. The model is a *soft* dependency: without Foundry
-  Local the rest of the system runs normally and still opens pull requests, and only
+- [Ollama](https://ollama.com) — **only needed to exercise the AI remediation loop**, and
+  there is nothing to install: the AppHost runs it as a container, so the container runtime
+  above is enough. The first start pulls `phi4` (several GB) into the `ollama` data volume.
+  Set `Model__Enabled=false` before starting to skip it. The model is a *soft* dependency:
+  without it the rest of the system runs normally and still opens pull requests, and only
   AI repair of compile breaks is unavailable.
 
 ## Build & test
@@ -85,6 +85,31 @@ Use the Aspire CLI rather than `dotnet run` on the AppHost: `dotnet run` bypasse
 CLI's lifecycle management and leaves orphaned processes holding file locks on `bin/` and
 `obj/`. If a build fails with `MSB3491` or `CS2012`, the app is still running — `aspire
 stop` releases the locks.
+
+### Local repository mode
+
+To run against plain git repositories on disk instead of Azure DevOps (no PAT, no Azure DevOps
+access), set two environment variables and start the AppHost:
+
+```powershell
+$env:LocalRepos__Enabled='true'; $env:Model__Enabled='false'; aspire start
+aspire resource scheduler start     # once api is running and local-scenarios-enroll has finished
+```
+
+Nothing needs generating or enrolling by hand: the AppHost builds the scenario feed and demo repos
+under `.local` when they are missing or stale (about 85 s cold, a few seconds when current),
+enrolls them through the API (a global baseline plus each repo's own settings), and gives `api`, `scheduler` and
+`remediation` `AzureDevOps__Mode=Local`. Each scenario repo carries its own settings over the global baseline
+(see `tools/local-scenarios/scenarios.psd1`). The scheduler is not automatic: start it when you want a
+pass (the first pass after a start runs every enabled repo; later passes run only the repos that are due), or use
+**Run now** on a single repository from the Configuration page. Other variables: `LocalRepos__Root` (default `.local`), `LocalRepos__ResetOnStart` (default `true`)
+and `LocalRepos__RunOnStart` (default `false`; `true` starts the scheduler automatically). To reset
+the repos between runs without a rebuild, start the `local-scenarios-reset` resource
+(`aspire resource local-scenarios-reset start`).
+
+With `Model__Enabled=false`, remediation is non-agentic: a build that fails after the bump ends
+`VerificationFailed` with no PR. See [docs/local-testing.md](docs/local-testing.md) for the full
+walkthrough, and [tools/local-scenarios/README.md](tools/local-scenarios/README.md) for the scripts.
 
 ### Functional (Playwright) smoke test
 
@@ -127,7 +152,7 @@ should not be inferred from the local shape:
 
 | Worker | Deployed as | Trigger | Behavior |
 | --- | --- | --- | --- |
-| `Worker.Scheduler` | Scheduled **Azure Container Apps Job** | Cron schedule (in the Job) | Runs once: enumerate enrolled repos, enqueue one `RemediationRunRequested` each, then **exit**. No in-process timer. A dev-only loop (`Scheduler:DevLoopEnabled`) can re-trigger it locally. |
+| `Worker.Scheduler` | Scheduled **Azure Container Apps Job** | Cron tick every 15 minutes (in the Job) | Runs once per tick: enumerate enabled repos, enqueue one `RemediationRunRequested` only for each repo that is due (default cadence daily at 00:00 UTC, or the repo's or global default schedule), at most one run per repo per tick, with schedule state in the `schedulestate` table, then **exit**. No in-process timer. A dev-only loop (`Scheduler:DevLoopEnabled`) can re-trigger it locally. |
 | `Worker.Remediation` | Event-driven **Azure Container Apps Job** | Service Bus queue depth (KEDA) | Scales out per queued message, processes the run via the agent, scales to zero when idle. |
 
 The ACA Job definitions and KEDA/cron settings live in Terraform — see
@@ -145,7 +170,7 @@ The model differs by environment, and **its effectiveness at this task differs w
 
 | | Local development | Deployed |
 | --- | --- | --- |
-| Model | Foundry Local (e.g. Phi-4), started by the AppHost | Azure AI Foundry deployment (e.g. `gpt-4o-mini`) |
+| Model | Ollama (`phi4`), started by the AppHost unless `Model:Enabled=false` | To be decided: the Terraform still provisions Azure AI Foundry, which the Ollama client cannot call (see the [feature risk](.work/features/002-local-repo-mode/FEATURE.md#risks-and-open-questions)) |
 | Purpose | exercising the loop — bounds, edit safety, transcripts, terminal states | actually repairing breaks |
 | Expected repair rate | **low; do not use it to judge the feature** | the number that matters, and it is measured, not assumed |
 
@@ -167,7 +192,7 @@ Guardrails worth knowing:
 - A pull request containing agent edits **says so**, with the attempt count and a transcript
   link. Review those diffs accordingly.
 
-Without Foundry Local installed the system runs normally and still opens pull requests; only
+With the model disabled or unreachable the system runs normally and still opens pull requests; only
 AI repair is unavailable, and runs record that rather than implying an attempt.
 
 ## The in-app review gate
@@ -208,9 +233,18 @@ caveat should not be treated as resolved by anything in this feature.
 | Key | Purpose |
 | --- | --- |
 | `ConnectionStrings:tables` / `:blobs` / `:servicebus` | Injected by the AppHost (Azurite / SB emulator locally). |
-| `ConnectionStrings:chat` | Injected by the AppHost — the model the AI loop uses (Foundry Local locally, the Foundry deployment when deployed). Absent means no AI repair. |
+| `ConnectionStrings:chat` | Injected by the AppHost — the Ollama model the AI loop uses, in the form `Endpoint=http://localhost:11434;Model=phi4` (the host port is assigned by Aspire; see `aspire describe`). Absent means no AI repair. |
+| `Model:Enabled` | AppHost setting, default `true` (a missing or unparseable value counts as true). `false` (env var `Model__Enabled`) leaves the `ollama` and `chat` resources out, so `remediation` gets no `ConnectionStrings:chat` and AI repair is unavailable. |
+| `LocalRepos:Enabled` | AppHost setting, default `false` (a missing or unparseable value counts as false). `true` (env var `LocalRepos__Enabled`) sets `AzureDevOps__Mode=Local`, `AzureDevOps__LocalRoot=<root>\repos` and `AzureDevOps__LocalPullRequestsRoot=<root>\prs` on `api`, `scheduler` and `remediation`. Independent of `Model:Enabled`. |
+| `LocalRepos:Root` | AppHost setting, default the repository's `.local` folder. Root of the `repos` and `prs` folders used in local repository mode. |
+| `LocalRepos:ResetOnStart` | AppHost setting, local mode only, default `true` (a missing or unparseable value counts as true). On every start the `local-scenarios` resource also resets the scenario repos and `<root>\prs` to a clean state (no rebuild). `false` (env var `LocalRepos__ResetOnStart`) skips the reset. |
+| `LocalRepos:Profile` | Obsolete and ignored (env var `LocalRepos__Profile`): each scenario repo carries its own settings. A non-blank value only prints a notice at AppHost startup. |
+| `LocalRepos:RunOnStart` | AppHost setting, local mode only, default `false` (a missing or unparseable value counts as false). In local mode `scheduler` is explicit-start: start it from the dashboard or `aspire resource scheduler start`. `true` (env var `LocalRepos__RunOnStart`) starts it automatically once provisioning has finished. |
 | `Agents:MaxAttempts` / `Agents:TokenBudget` / `Agents:AttemptTimeout` | Bounds on the AI loop: attempts per run (3), tokens per run (120k), and per-model-call timeout (3m). |
 | `Scheduler:DevLoopEnabled` / `Scheduler:DevLoopIntervalSeconds` | Local-only re-trigger of the run-once scheduler. |
+| `AzureDevOps:Mode` | `AzureDevOps` (default) or `Local`, case-insensitive. `Local` swaps the REST client for `LocalRepositoryClient`, which works against plain git repositories on disk (needs `git` on PATH; no PAT). |
+| `AzureDevOps:LocalRoot` | Local mode only, required: folder holding one git repository per managed repository `Name` (organization and project are ignored). |
+| `AzureDevOps:LocalPullRequestsRoot` | Local mode only: folder for pull request records (`<root>/<repo>/<id>.json`). Defaults to a `prs` folder beside `LocalRoot`. |
 | `AzureDevOps:Pat` | Personal access token. Needs **Code (Read & Write)** plus pull-request contribution — approving a held proposal pushes a branch and opens a pull request, so a read-only token is not enough. |
 
 ## Recommended agent skills

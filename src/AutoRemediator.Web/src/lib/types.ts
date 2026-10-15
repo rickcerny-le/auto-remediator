@@ -8,6 +8,7 @@ export interface ManagedRepository {
   name: string
   enabled: boolean
   targetBranch: string
+  settings?: RepositorySettings | null
 }
 
 export interface ManagedRepositoryInput {
@@ -16,6 +17,69 @@ export interface ManagedRepositoryInput {
   name: string
   enabled: boolean
   targetBranch: string
+  /** Omit on PUT to keep the stored settings. */
+  settings?: RepositorySettings | null
+}
+
+/** Per-repository settings layered over the global ones. Null scalars are inherited. */
+export interface RepositorySettings {
+  inheritGlobal: boolean
+  patterns: string[]
+  excludes: string[]
+  feeds: string[]
+  ignore: string[]
+  strategy: string | null
+  allowPrerelease: boolean | null
+  schedule: string | null
+}
+
+export type SettingSource = 'Global' | 'Repository' | 'Both' | 'Default'
+
+export interface EffectiveListItem {
+  value: string
+  source: SettingSource
+}
+
+export interface EffectiveValue {
+  value: string
+  source: SettingSource
+}
+
+/** The settings that actually apply to one repository, with a source for every value. */
+export interface EffectiveSettings {
+  repositoryId: string
+  inheritGlobal: boolean
+  patterns: EffectiveListItem[]
+  excludes: EffectiveListItem[]
+  feeds: EffectiveListItem[]
+  ignore: EffectiveListItem[]
+  strategy: EffectiveValue
+  allowPrerelease: EffectiveValue
+  schedule: EffectiveValue
+  warnings: string[]
+  /** Null for a disabled repository or one that was never scheduled. */
+  lastScheduledAtUtc?: string | null
+  /** The next occurrences; when never scheduled the first is "now" (the next tick). Null for a disabled repository. */
+  nextScheduledRunsUtc?: string[] | null
+  dueAtNextTick?: boolean | null
+}
+
+/** Body of a 202 from POST /api/repositories/{id}/run. */
+export interface RunNowAccepted {
+  runId: string
+  enabled: boolean
+}
+
+/** Body of a 409 from POST /api/repositories/{id}/run. */
+export interface RunNowRefused {
+  reason: string
+  heldRunId?: string
+  message: string
+}
+
+export interface RunNowResult {
+  status: number
+  body: Partial<RunNowAccepted> & Partial<RunNowRefused>
 }
 
 export interface TargetingSettings {
@@ -25,6 +89,7 @@ export interface TargetingSettings {
   strategy: string
   ignore: string[]
   allowPrerelease: boolean
+  defaultSchedule?: string | null
 }
 
 export interface DependencyMapEntry {
@@ -47,6 +112,7 @@ export interface RunSummary {
   finishedAtUtc: string | null
   updateCount: number
   pullRequestUrl: string | null
+  trigger: 'Scheduled' | 'Manual'
 }
 
 export interface RunUpdate {
@@ -90,6 +156,9 @@ export interface RunDetail {
   remediation: RunRemediation | null
   proposalUrl: string | null
   reviewNote: string | null
+  /** Present only in local repository mode, when the run has a pull request. */
+  pullRequestDiffUrl: string | null
+  trigger: 'Scheduled' | 'Manual'
 }
 
 export interface ProposedFile {
@@ -110,6 +179,23 @@ export interface ChangeProposal {
   reviewCommandCount: number
   files: ProposedFile[]
   provokingDiagnostics: RunDiagnostic[]
+}
+
+export interface PullRequestDiffFile {
+  path: string
+  changeKind: 'Added' | 'Modified' | 'Deleted'
+  originalContent: string | null
+  newContent: string | null
+  isBinary: boolean
+  isTruncated: boolean
+}
+
+export interface PullRequestDiff {
+  sourceBranch: string
+  targetBranch: string
+  baseCommitId: string
+  headCommitId: string
+  files: PullRequestDiffFile[]
 }
 
 export type ReviewCommand = 'approve' | 'rebuild' | 'retry' | 'discard'

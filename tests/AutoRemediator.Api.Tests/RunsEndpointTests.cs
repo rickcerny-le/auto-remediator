@@ -36,7 +36,11 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     private HttpClient CreateClient() => CreateClient(out _, out _, out _);
 
-    private HttpClient CreateClient(out InMemoryRunStore store, out FakeProposalStore proposals, out RecordingPublisher publisher)
+    private HttpClient CreateClient(
+        out InMemoryRunStore store,
+        out FakeProposalStore proposals,
+        out RecordingPublisher publisher,
+        IPullRequestDiffReader? diffReader = null)
     {
         store = new InMemoryRunStore();
         var logs = new InMemoryLogStore
@@ -49,7 +53,7 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         completed.Verified(VerificationOutcome.Verified(LogReference));
         completed.Completed([new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")], "https://dev.azure.com/pr/1", DateTimeOffset.UtcNow);
 
-        var failed = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/worker", DateTimeOffset.UtcNow);
+        var failed = new RemediationRun(Guid.NewGuid(), Guid.NewGuid(), "contoso/platform/worker", DateTimeOffset.UtcNow, RunTrigger.Manual);
         failed.Failed("boom", DateTimeOffset.UtcNow);
 
         var rejected = new RemediationRun(RejectedRunId, Guid.NewGuid(), "contoso/platform/api", DateTimeOffset.UtcNow);
@@ -111,7 +115,29 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
                 services.AddSingleton<IChangeProposalStore>(capturedProposals);
                 services.AddSingleton<IMessagePublisher>(capturedPublisher);
                 services.AddSingleton<IAzureDevOpsClient>(new NeverCalledAdo());
+                if (diffReader is not null)
+                {
+                    services.RemoveAll<IPullRequestDiffReader>();
+                    services.AddSingleton(diffReader);
+                }
             })).CreateClient();
+    }
+
+    [Fact]
+    public async Task List_and_detail_include_the_run_trigger()
+    {
+        var client = CreateClient();
+        var runs = await client.GetFromJsonAsync<List<RunSummaryDto>>("/api/runs", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(runs);
+        var manual = Assert.Single(runs, r => r.Trigger == "Manual");
+        Assert.Equal("contoso/platform/worker", manual.RepositorySlug);
+        Assert.All(runs.Where(r => r.Id != manual.Id), r => Assert.Equal("Scheduled", r.Trigger));
+
+        var manualDetail = await client.GetFromJsonAsync<RunDetailDto>($"/api/runs/{manual.Id}", TestContext.Current.CancellationToken);
+        var scheduledDetail = await client.GetFromJsonAsync<RunDetailDto>($"/api/runs/{CompletedRunId}", TestContext.Current.CancellationToken);
+        Assert.Equal("Manual", manualDetail!.Trigger);
+        Assert.Equal("Scheduled", scheduledDetail!.Trigger);
     }
 
     [Fact]
@@ -397,6 +423,95 @@ public class RunsEndpointTests(ApiFactory factory) : IClassFixture<ApiFactory>
         await client.PostAsync($"/api/runs/{AwaitingReviewRunId}/review/approve", content: null, TestContext.Current.CancellationToken);
         await client.PostAsync($"/api/runs/{CompletedRunId}/review/approve", content: null, TestContext.Current.CancellationToken);
         await client.GetAsync($"/api/runs/{AwaitingReviewRunId}/proposal", TestContext.Current.CancellationToken);
+    }
+
+    private static PullRequestDiff SampleDiff() => new(
+        "autoremediator/dependency-updates",
+        "main",
+        "base111",
+        "head222",
+        [
+            new PullRequestDiffFile("/Directory.Packages.props", PullRequestChangeKind.Modified, "<Old/>", "<New/>", false, false),
+            new PullRequestDiffFile("/logo.bin", PullRequestChangeKind.Added, null, null, true, false),
+        ]);
+
+    [Fact]
+    public async Task Detail_links_the_pull_request_diff_only_when_the_reader_is_available_and_a_pull_request_exists()
+    {
+        var client = CreateClient(out _, out _, out _, new FakeDiffReader(available: true, SampleDiff()));
+
+        var withPr = await client.GetFromJsonAsync<RunDetailDto>($"/api/runs/{CompletedRunId}", TestContext.Current.CancellationToken);
+        var withoutPr = await client.GetFromJsonAsync<RunDetailDto>($"/api/runs/{RejectedRunId}", TestContext.Current.CancellationToken);
+
+        Assert.Equal($"/api/runs/{CompletedRunId}/pull-request-diff", withPr!.PullRequestDiffUrl);
+        Assert.Null(withoutPr!.PullRequestDiffUrl);
+    }
+
+    [Fact]
+    public async Task Detail_has_no_pull_request_diff_link_by_default_and_the_endpoint_is_not_found()
+    {
+        // The default factory composes the Azure DevOps path, where the reader is unavailable.
+        var client = CreateClient();
+
+        var run = await client.GetFromJsonAsync<RunDetailDto>($"/api/runs/{CompletedRunId}", TestContext.Current.CancellationToken);
+        var response = await client.GetAsync($"/api/runs/{CompletedRunId}/pull-request-diff", TestContext.Current.CancellationToken);
+
+        Assert.Null(run!.PullRequestDiffUrl);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_pull_request_diff_endpoint_returns_the_readers_diff()
+    {
+        var reader = new FakeDiffReader(available: true, SampleDiff());
+        var client = CreateClient(out _, out _, out _, reader);
+
+        var diff = await client.GetFromJsonAsync<PullRequestDiffDto>($"/api/runs/{CompletedRunId}/pull-request-diff", TestContext.Current.CancellationToken);
+
+        Assert.Equal("https://dev.azure.com/pr/1", reader.RequestedUrl);
+        Assert.Equal("autoremediator/dependency-updates", diff!.SourceBranch);
+        Assert.Equal("main", diff.TargetBranch);
+        Assert.Equal("base111", diff.BaseCommitId);
+        Assert.Equal("head222", diff.HeadCommitId);
+        Assert.Equal(2, diff.Files.Count);
+        Assert.Equal(new PullRequestDiffFileDto("/Directory.Packages.props", "Modified", "<Old/>", "<New/>", false, false), diff.Files[0]);
+        Assert.Equal(new PullRequestDiffFileDto("/logo.bin", "Added", null, null, true, false), diff.Files[1]);
+    }
+
+    [Fact]
+    public async Task The_pull_request_diff_endpoint_is_not_found_for_every_missing_case()
+    {
+        var available = CreateClient(out _, out _, out _, new FakeDiffReader(available: true, SampleDiff()));
+        var unreadable = CreateClient(out _, out _, out _, new FakeDiffReader(available: true, diff: null));
+
+        Assert.Equal(HttpStatusCode.NotFound, (await available.GetAsync($"/api/runs/{Guid.NewGuid()}/pull-request-diff", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await available.GetAsync($"/api/runs/{RejectedRunId}/pull-request-diff", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await unreadable.GetAsync($"/api/runs/{CompletedRunId}/pull-request-diff", TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task The_pull_request_diff_endpoint_is_not_found_when_the_reader_is_unavailable()
+    {
+        var reader = new FakeDiffReader(available: false, SampleDiff());
+        var client = CreateClient(out _, out _, out _, reader);
+
+        var response = await client.GetAsync($"/api/runs/{CompletedRunId}/pull-request-diff", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Null(reader.RequestedUrl);
+    }
+
+    private sealed class FakeDiffReader(bool available, PullRequestDiff? diff) : IPullRequestDiffReader
+    {
+        public string? RequestedUrl { get; private set; }
+
+        public bool IsAvailable => available;
+
+        public Task<PullRequestDiff?> GetDiffAsync(string pullRequestUrl, CancellationToken cancellationToken)
+        {
+            RequestedUrl = pullRequestUrl;
+            return Task.FromResult(diff);
+        }
     }
 
     private sealed class InMemoryRunStore : IRemediationRunStore

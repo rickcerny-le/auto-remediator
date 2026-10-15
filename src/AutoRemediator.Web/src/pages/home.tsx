@@ -9,6 +9,7 @@ import { Pill } from '@/components/pill'
 import { PullRequestLink, RunStatus, Timestamp } from '@/components/run-cells'
 import { api } from '@/lib/api'
 import { shortSlug } from '@/lib/format'
+import { cn, focusRing } from '@/lib/utils'
 import type { ManagedRepository, RunSummary } from '@/lib/types'
 import { useLoad, useTitle } from '@/hooks'
 
@@ -19,7 +20,7 @@ const recentColumns = col.columns([
     header: 'Repository',
     cell: (c) => <span className="font-mono">{shortSlug(c.getValue())}</span>,
   }),
-  col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} /> }),
+  col.accessor('status', { header: 'Status', cell: (c) => <RunStatus status={c.getValue()} trigger={c.row.original.trigger} /> }),
   col.accessor('updateCount', {
     header: 'Updates',
     cell: (c) => c.getValue(),
@@ -138,7 +139,7 @@ export function HomePage() {
         <Card className="gap-0 py-0 md:col-span-2">
           <div className="flex items-center border-b p-4">
             <h2 className="mr-auto text-base font-semibold">Recent runs</h2>
-            <Link to="/runs" className="text-sm text-info hover:underline">
+            <Link to="/runs" className={cn(focusRing, 'rounded-sm text-sm text-info hover:underline')}>
               View all →
             </Link>
           </div>
@@ -154,7 +155,7 @@ export function HomePage() {
         </Card>
 
         <Card className="gap-0 p-4" data-testid="targeting">
-          <h2 className="mb-3 text-base font-semibold">Targeting</h2>
+          <h2 className="mb-3 text-base font-semibold">Global targeting</h2>
           <TargetingRow label="Patterns">
             <span className="font-mono text-success">{join(settings?.patterns) ?? '—'}</span>
           </TargetingRow>

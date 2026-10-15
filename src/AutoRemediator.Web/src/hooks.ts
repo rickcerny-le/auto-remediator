@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { runNowMessage } from '@/components/run-now-message'
+import { api, errorMessage } from '@/lib/api'
+import type { ManagedRepository } from '@/lib/types'
 
 export function useTitle(title: string) {
   useEffect(() => {
@@ -40,6 +43,35 @@ export function useLoad<T>(load: () => Promise<T>) {
   }, [])
 
   return { data: state.data, error: state.error, loading: state.loading || state.source !== load, reload }
+}
+
+/**
+ * Run now for one or more repositories. `runNow` queues a manual run and reports the outcome through
+ * `onMessage` (a stable setter such as a useState setter); `pending` holds the ids with a request in flight,
+ * so callers can disable their buttons.
+ */
+export function useRunNow(onMessage: (message: ReactNode) => void) {
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
+
+  const runNow = useCallback(
+    async (repo: Pick<ManagedRepository, 'id' | 'name'>) => {
+      setPending((p) => new Set(p).add(repo.id))
+      try {
+        onMessage(runNowMessage(repo.name, await api.runNow(repo.id)))
+      } catch (e) {
+        onMessage(`Could not run ${repo.name}: ${errorMessage(e)}`)
+      } finally {
+        setPending((p) => {
+          const next = new Set(p)
+          next.delete(repo.id)
+          return next
+        })
+      }
+    },
+    [onMessage],
+  )
+
+  return { runNow, pending }
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system'

@@ -16,8 +16,11 @@ public class RemediationRunnerTests
 {
     private static readonly ManagedRepository Repo = new(Guid.NewGuid(), "contoso", "platform", "web-api");
 
-    private static RemediationRunRequested Request => new(
-        Guid.NewGuid(), Repo.Id, Repo.Organization, Repo.Project, Repo.Name, DateTimeOffset.UtcNow);
+    private static RemediationRunRequested Request(RemediationTrigger trigger = RemediationTrigger.Scheduled, ManagedRepository? repo = null)
+    {
+        repo ??= Repo;
+        return new(Guid.NewGuid(), repo.Id, repo.Organization, repo.Project, repo.Name, DateTimeOffset.UtcNow, trigger);
+    }
 
     private static RepositoryUpdatePlan SinglePlan => new(
         [new DependencyUpdate("Contoso.Core", "1.0.0", "2.0.0")],
@@ -36,6 +39,48 @@ public class RemediationRunnerTests
         Assert.Equal(1, ado.Pushes);
         Assert.Equal(RunStatus.Completed, store.Last?.Status);
         Assert.Equal(VerificationClassification.Verified, run.Verification?.Classification);
+    }
+
+    [Theory]
+    [InlineData(RemediationTrigger.Scheduled, RunTrigger.Scheduled)]
+    [InlineData(RemediationTrigger.Manual, RunTrigger.Manual)]
+    public async Task The_run_is_created_with_the_trigger_from_the_message(RemediationTrigger requested, RunTrigger expected)
+    {
+        var store = new RecordingRunStore();
+
+        var run = await RunAsync(SinglePlan, new FakeAdo(), store, trigger: requested);
+
+        Assert.Equal(expected, run.Trigger);
+        Assert.Equal(expected, store.Last?.Trigger);
+    }
+
+    [Fact]
+    public async Task The_planner_receives_the_repositorys_effective_settings()
+    {
+        // Global is Minor with Contoso.*; the repository adds Fabrikam.* and overrides the strategy.
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "billing",
+            settings: new RepositorySettings(patterns: ["Fabrikam.*"], strategy: UpdateStrategy.Major));
+        var planner = new FakePlanner(SinglePlan);
+
+        await RunAsync(SinglePlan, new FakeAdo(), new RecordingRunStore(), repo: repo, planner: planner);
+
+        Assert.NotNull(planner.ReceivedSettings);
+        Assert.Equal(UpdateStrategy.Major, planner.ReceivedSettings.Policy.Strategy);
+        Assert.Equal(["Contoso.*", "Fabrikam.*"], planner.ReceivedSettings.Patterns.Order());
+    }
+
+    [Fact]
+    public async Task A_repository_with_no_effective_patterns_ends_with_no_updates()
+    {
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "isolated",
+            settings: new RepositorySettings(inheritGlobal: false));
+        var noChanges = new RepositoryUpdatePlan([], []);
+        var planner = new FakePlanner(noChanges);
+
+        var run = await RunAsync(noChanges, new FakeAdo(), new RecordingRunStore(), repo: repo, planner: planner);
+
+        Assert.Equal(RunStatus.NoUpdates, run.Status);
+        Assert.Empty(planner.ReceivedSettings!.Patterns);
     }
 
     // ---- Verification outcomes -----------------------------------------------------
@@ -487,7 +532,7 @@ public class RemediationRunnerTests
             runStore,
             proposals,
             new FakeRepoStore(Repo),
-            new FakeSettingsStore(),
+            new EffectiveSettingsProvider(new FakeSettingsStore()),
             new FakeVerification(new VerificationResult(VerificationOutcome.Verified(), [])),
             FakeLoop.NoAgent(),
             new UnavailableRemediationAgent(),
@@ -513,8 +558,12 @@ public class RemediationRunnerTests
         FakeVerification? verification = null,
         FakeLoop? loop = null,
         RecordingLogs? logs = null,
-        FakeProposalStore? proposalStore = null)
+        FakeProposalStore? proposalStore = null,
+        RemediationTrigger trigger = RemediationTrigger.Scheduled,
+        ManagedRepository? repo = null,
+        FakePlanner? planner = null)
     {
+        repo ??= Repo;
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
         builder.Configuration["ConnectionStrings:blobs"] = "UseDevelopmentStorage=true";
@@ -528,9 +577,9 @@ public class RemediationRunnerTests
         builder.Services.RemoveAll<IRemediationRunStore>();
         builder.Services.RemoveAll<IVerificationService>();
         builder.Services.RemoveAll<IChangeProposalStore>();
-        builder.Services.AddSingleton<IManagedRepositoryStore>(new FakeRepoStore(Repo));
+        builder.Services.AddSingleton<IManagedRepositoryStore>(new FakeRepoStore(repo));
         builder.Services.AddSingleton<ITargetingSettingsStore>(new FakeSettingsStore());
-        builder.Services.AddSingleton<IUpdatePlanner>(new FakePlanner(plan));
+        builder.Services.AddSingleton<IUpdatePlanner>(planner ?? new FakePlanner(plan));
         builder.Services.AddSingleton<IAzureDevOpsClient>(ado);
         builder.Services.AddSingleton<IRemediationRunStore>(store);
         builder.Services.RemoveAll<IRemediationLoop>();
@@ -542,7 +591,7 @@ public class RemediationRunnerTests
         builder.Services.AddSingleton<IChangeProposalStore>(proposalStore ?? new FakeProposalStore());
 
         await using var provider = builder.Services.BuildServiceProvider();
-        return await provider.GetRequiredService<IRemediationRunner>().RunAsync(Request, TestContext.Current.CancellationToken);
+        return await provider.GetRequiredService<IRemediationRunner>().RunAsync(Request(trigger, repo), TestContext.Current.CancellationToken);
     }
 
     private sealed class FakeRepoStore(ManagedRepository repo) : IManagedRepositoryStore
@@ -561,7 +610,13 @@ public class RemediationRunnerTests
 
     private sealed class FakePlanner(RepositoryUpdatePlan plan) : IUpdatePlanner
     {
-        public Task<RepositoryUpdatePlan> PlanAsync(ManagedRepository r, TargetingSettings s, CancellationToken ct = default) => Task.FromResult(plan);
+        public TargetingSettings? ReceivedSettings { get; private set; }
+
+        public Task<RepositoryUpdatePlan> PlanAsync(ManagedRepository r, TargetingSettings s, CancellationToken ct = default)
+        {
+            ReceivedSettings = s;
+            return Task.FromResult(plan);
+        }
     }
 
     private sealed class FakeVerification(VerificationResult verificationResult) : IVerificationService

@@ -67,10 +67,10 @@ variable "remediation_image" {
 }
 
 # --- Scheduling / scaling -----------------------------------------------------
-variable "scheduler_cron_expression" {
+variable "scheduler_tick_cron_expression" {
   type        = string
-  description = "Cron expression for the scheduler Container Apps Job (UTC)."
-  default     = "0 */6 * * *"
+  description = "Scheduler tick (UTC). Each tick enqueues only repositories whose own schedule is due. Keep it at */15 * * * *, the minimum per-repository interval: a slower tick delays schedules. This is not the run cadence; set that with the global default schedule or per repository."
+  default     = "*/15 * * * *"
 }
 
 variable "remediation_queue_scale_threshold" {

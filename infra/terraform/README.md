@@ -57,13 +57,35 @@ terraform destroy        # test env is disposable
 | --- | --- | --- |
 | Container Apps Environment | Consumption | scale-to-zero, no VNet |
 | api / web | Container Apps, min replicas 0 | external ingress, cold-start on first hit |
-| scheduler | Container Apps **Job**, Schedule trigger | cron (`scheduler_cron_expression`), runs once per fire |
+| scheduler | Container Apps **Job**, Schedule trigger | tick (`scheduler_tick_cron_expression`, every 15 minutes), enqueues only due repositories |
 | remediation | Container Apps **Job**, Event trigger | KEDA Service Bus queue scaling |
 | Container Registry | Basic | RBAC pull (AcrPull), admin user disabled |
 | Storage | Standard LRS | table + blob container |
 | Service Bus | Basic | queue only (topics/sessions need Standard) |
 | AI Foundry | AI Services account + `gpt-4o-mini` | per-token billing, near-zero idle |
 | Log Analytics | PerGB2018, 30-day | required by the ACA environment |
+
+### Upgrading from the 6-hourly scheduler
+
+The scheduler job's cron used to be the run cadence for every repository
+(`scheduler_cron_expression`, default `0 */6 * * *`). It is now only a tick:
+each fire enqueues only the repositories whose own schedule is due. Existing
+deployments therefore change from every 6 hours to **daily at 00:00 UTC** per
+repository, unless you configure a cadence.
+
+1. Remove `scheduler_cron_expression` from any tfvars file or `-var` usage. The
+   variable no longer exists (there is no alias), so a stale tfvars entry gives
+   Terraform's undeclared-variable warning and `-var` gives an error. It is
+   replaced by `scheduler_tick_cron_expression` (default `*/15 * * * *`); leave
+   that at the default, because a slower tick delays per-repository schedules.
+2. If you had set the old variable to change how often repositories run, put that
+   expression in the global default schedule (Configuration page or
+   `PUT /api/settings`), or on individual repositories, instead. For the old
+   behaviour use `0 */6 * * *`. Terraform does not write this setting; it is
+   application data.
+3. Without that, repositories run once a day at 00:00 UTC. Every enabled
+   repository also runs once at the first tick after the deploy, because none has
+   been scheduled yet; from then on it follows its schedule.
 
 ## Container images
 

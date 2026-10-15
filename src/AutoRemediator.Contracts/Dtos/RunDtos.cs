@@ -8,7 +8,8 @@ public sealed record RunSummaryDto(
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? FinishedAtUtc,
     int UpdateCount,
-    string? PullRequestUrl);
+    string? PullRequestUrl,
+    string Trigger = "Scheduled");
 
 /// <summary>An update applied by a run, as shown on the run detail page.</summary>
 public sealed record RunUpdateDto(
@@ -49,7 +50,9 @@ public sealed record RunDetailDto(
     RunVerificationDto? Verification = null,
     RunRemediationDto? Remediation = null,
     string? ProposalUrl = null,
-    string? ReviewNote = null);
+    string? ReviewNote = null,
+    string? PullRequestDiffUrl = null,
+    string Trigger = "Scheduled");
 
 /// <summary>
 /// What the AI repair loop did for a run. Present only when the loop ran; an attempt count of zero
@@ -81,3 +84,28 @@ public sealed record ChangeProposalDto(
     int ReviewCommandCount,
     IReadOnlyList<ProposedFileDto> Files,
     IReadOnlyList<RunDiagnosticDto> ProvokingDiagnostics);
+
+
+/// <summary>
+/// A local pull request's changes, read-only. Present only in local repository mode.
+/// </summary>
+public sealed record PullRequestDiffDto(
+    string SourceBranch,
+    string TargetBranch,
+    string BaseCommitId,
+    string HeadCommitId,
+    IReadOnlyList<PullRequestDiffFileDto> Files);
+
+/// <summary>One changed file in a pull request diff.</summary>
+/// <param name="Path">Rooted with <c>/</c>.</param>
+/// <param name="ChangeKind"><c>"Added"</c>, <c>"Modified"</c> or <c>"Deleted"</c>.</param>
+/// <param name="OriginalContent">Content at the base commit; null when added, binary, or absent.</param>
+/// <param name="NewContent">Content at the head commit; null when deleted, binary, or absent.</param>
+/// <param name="IsTruncated">A side was cut at the size cap.</param>
+public sealed record PullRequestDiffFileDto(
+    string Path,
+    string ChangeKind,
+    string? OriginalContent,
+    string? NewContent,
+    bool IsBinary,
+    bool IsTruncated);

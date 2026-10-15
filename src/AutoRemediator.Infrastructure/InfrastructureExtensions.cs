@@ -10,6 +10,7 @@ using AutoRemediator.Infrastructure.Feeds;
 using AutoRemediator.Infrastructure.Messaging;
 using AutoRemediator.Infrastructure.Remediation;
 using AutoRemediator.Infrastructure.Review;
+using AutoRemediator.Infrastructure.Scheduling;
 using AutoRemediator.Infrastructure.Storage;
 using AutoRemediator.Infrastructure.Verification;
 using Microsoft.Extensions.Configuration;
@@ -64,24 +65,42 @@ public static class InfrastructureExtensions
         // Configuration + run-history stores.
         builder.Services.AddSingleton<IManagedRepositoryStore, TableManagedRepositoryStore>();
         builder.Services.AddSingleton<ITargetingSettingsStore, TableTargetingSettingsStore>();
+        builder.Services.AddSingleton<IEffectiveSettingsProvider, EffectiveSettingsProvider>();
         builder.Services.AddSingleton<IRemediationRunStore, TableRemediationRunStore>();
+        builder.Services.AddSingleton<IScheduleStateStore, TableScheduleStateStore>();
         builder.Services.AddSingleton<IChangeProposalStore, ChangeProposalStore>();
         builder.Services.AddScoped<IReviewCommandHandler, ReviewCommandHandler>();
 
         // Azure DevOps connectivity (REST) + PAT Basic auth.
         builder.Services.AddOptions<AzureDevOpsOptions>()
             .Bind(config.GetSection(AzureDevOpsOptions.SectionName));
-        builder.Services.AddHttpClient<IAzureDevOpsClient, AzureDevOpsClient>((sp, http) =>
+        var azureDevOps = config.GetSection(AzureDevOpsOptions.SectionName).Get<AzureDevOpsOptions>();
+        if (azureDevOps?.IsLocal == true)
         {
-            var options = sp.GetRequiredService<IOptions<AzureDevOpsOptions>>().Value;
-            if (!string.IsNullOrWhiteSpace(options.OrganizationUrl))
+            // Local mode: plain git repositories on disk instead of the REST API. No PAT is needed.
+            if (string.IsNullOrWhiteSpace(azureDevOps.LocalRoot))
             {
-                http.BaseAddress = new Uri(options.OrganizationUrl.TrimEnd('/') + "/");
+                throw new InvalidOperationException("AzureDevOps:LocalRoot must be set when AzureDevOps:Mode is Local.");
             }
 
-            var basic = Convert.ToBase64String(Encoding.ASCII.GetBytes(":" + (options.Pat ?? string.Empty)));
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", basic);
-        });
+            builder.Services.AddSingleton<IAzureDevOpsClient, LocalRepositoryClient>();
+            builder.Services.AddSingleton<IPullRequestDiffReader, LocalPullRequestDiffReader>();
+        }
+        else
+        {
+            builder.Services.TryAddSingleton<IPullRequestDiffReader, UnavailablePullRequestDiffReader>();
+            builder.Services.AddHttpClient<IAzureDevOpsClient, AzureDevOpsClient>((sp, http) =>
+            {
+                var options = sp.GetRequiredService<IOptions<AzureDevOpsOptions>>().Value;
+                if (!string.IsNullOrWhiteSpace(options.OrganizationUrl))
+                {
+                    http.BaseAddress = new Uri(options.OrganizationUrl.TrimEnd('/') + "/");
+                }
+
+                var basic = Convert.ToBase64String(Encoding.ASCII.GetBytes(":" + (options.Pat ?? string.Empty)));
+                http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", basic);
+            });
+        }
 
         // Feed version resolution + analysis + planning + remediation.
         builder.Services.AddSingleton<IFeedVersionResolver, FeedVersionResolver>();
@@ -109,6 +128,7 @@ public static class InfrastructureExtensions
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddScoped<IRemediationRunner, RemediationRunner>();
+        builder.Services.AddSingleton<IRemediationRunRequester, RemediationRunRequester>();
 
         return builder;
     }

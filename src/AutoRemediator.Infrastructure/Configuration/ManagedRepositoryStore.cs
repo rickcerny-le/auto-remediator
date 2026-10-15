@@ -29,18 +29,53 @@ internal sealed class ManagedRepositoryEntity : ITableEntity
     public bool Enabled { get; set; }
     public string TargetBranch { get; set; } = "main";
 
-    public static ManagedRepositoryEntity FromDomain(ManagedRepository r) => new()
-    {
-        RowKey = r.Id.ToString(),
-        Organization = r.Organization,
-        Project = r.Project,
-        Name = r.Name,
-        Enabled = r.Enabled,
-        TargetBranch = r.TargetBranch,
-    };
+    // Per-repository settings. All nullable: rows are written with TableUpdateMode.Replace and
+    // legacy rows lack these columns, so null means inherit/unset.
+    public bool? InheritGlobal { get; set; }
+    public string? PatternsJson { get; set; }
+    public string? ExcludesJson { get; set; }
+    public string? FeedsJson { get; set; }
+    public string? IgnoreJson { get; set; }
+    public string? Strategy { get; set; }
+    public bool? AllowPrerelease { get; set; }
+    public string? Schedule { get; set; }
 
-    public ManagedRepository ToDomain() =>
-        new(Guid.Parse(RowKey), Organization, Project, Name, Enabled, TargetBranch);
+    public static ManagedRepositoryEntity FromDomain(ManagedRepository r)
+    {
+        var s = r.Settings;
+        return new()
+        {
+            RowKey = r.Id.ToString(),
+            Organization = r.Organization,
+            Project = r.Project,
+            Name = r.Name,
+            Enabled = r.Enabled,
+            TargetBranch = r.TargetBranch,
+            // Null is the default (true), so an inherit-everything repository matches a legacy row.
+            InheritGlobal = s.InheritGlobal ? null : false,
+            PatternsJson = JsonLists.SerializeOrNull(s.Patterns),
+            ExcludesJson = JsonLists.SerializeOrNull(s.Excludes),
+            FeedsJson = JsonLists.SerializeOrNull(s.Feeds),
+            IgnoreJson = JsonLists.SerializeOrNull(s.Ignore),
+            Strategy = s.Strategy?.ToString(),
+            AllowPrerelease = s.AllowPrerelease,
+            Schedule = s.Schedule,
+        };
+    }
+
+    public ManagedRepository ToDomain()
+    {
+        var settings = new RepositorySettings(
+            InheritGlobal ?? true,
+            JsonLists.Deserialize(PatternsJson),
+            JsonLists.Deserialize(ExcludesJson),
+            JsonLists.Deserialize(FeedsJson),
+            JsonLists.Deserialize(IgnoreJson),
+            Enum.TryParse<UpdateStrategy>(Strategy, ignoreCase: true, out var strategy) ? strategy : null,
+            AllowPrerelease,
+            Schedule);
+        return new(Guid.Parse(RowKey), Organization, Project, Name, Enabled, TargetBranch, settings);
+    }
 }
 
 internal sealed class TableManagedRepositoryStore(ITableStore tableStore) : IManagedRepositoryStore

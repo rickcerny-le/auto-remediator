@@ -33,6 +33,30 @@ public class ManagedRepositoryTests
     }
 
     [Fact]
+    public void New_repository_inherits_all_settings()
+    {
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api");
+
+        Assert.Same(RepositorySettings.Inherit.GetType(), repo.Settings.GetType());
+        Assert.True(repo.Settings.InheritGlobal);
+        Assert.False(repo.Settings.HasOverrides);
+    }
+
+    [Fact]
+    public void Constructor_accepts_settings_and_SetSettings_replaces_them()
+    {
+        var initial = new RepositorySettings(patterns: ["Contoso.*"]);
+        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api", settings: initial);
+        Assert.Same(initial, repo.Settings);
+
+        var replacement = new RepositorySettings(inheritGlobal: false, strategy: UpdateStrategy.Major);
+        repo.SetSettings(replacement);
+
+        Assert.Same(replacement, repo.Settings);
+        Assert.Throws<ArgumentNullException>(() => repo.SetSettings(null!));
+    }
+
+    [Fact]
     public void Constructor_rejects_blank_name()
     {
         Assert.Throws<ArgumentException>(() =>

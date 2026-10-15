@@ -17,7 +17,8 @@ namespace AutoRemediator.Infrastructure.Tests;
 /// real agent over a real chat client, and the real loop deciding when to stop. Only the Azure
 /// DevOps archive call is faked, because the tree comes from a zip either way.
 ///
-/// Skips unless <c>AUTOREMEDIATOR_CHAT_CONNECTION</c> names a reachable model.
+/// Skips unless <c>AUTOREMEDIATOR_CHAT_CONNECTION</c> names a reachable Ollama model, in the form
+/// <c>Endpoint=http://localhost:11434;Model=&lt;name&gt;</c> (take the real port from <c>aspire describe</c>).
 ///
 /// Asserts loop **mechanics**, never a repair. A small local development model may well fail to fix
 /// the break; that is expected and is not a defect in this system. Whether it repaired is reported

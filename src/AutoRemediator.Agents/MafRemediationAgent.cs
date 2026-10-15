@@ -11,7 +11,7 @@ namespace AutoRemediator.Agents;
 /// Repairs compile and API breaks by asking a chat model to rewrite the affected files.
 ///
 /// The chat client is injected from an Aspire connection reference, so the same agent runs against a
-/// local model in development and the deployed Foundry account in Azure. When no model is
+/// local model in development and the deployed model account in Azure. When no model is
 /// configured the client is absent and the agent reports itself unavailable rather than failing —
 /// the model is a soft dependency.
 /// </summary>
@@ -62,6 +62,13 @@ internal sealed class MafRemediationAgent(
             logger.LogWarning(
                 "Attempt {Attempt}: the model did not respond within {Timeout}.", attempt.AttemptNumber, _options.AttemptTimeout);
             return RemediationProposal.None($"the model did not respond within {_options.AttemptTimeout}");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The model is a soft dependency: a missing model, a refused connection or a server
+            // error (Ollama answers 404 until phi4 has finished pulling) costs the repair, not the run.
+            logger.LogWarning(ex, "Attempt {Attempt}: the model call failed.", attempt.AttemptNumber);
+            return RemediationProposal.None($"the model could not be reached ({ex.GetType().Name}: {ex.Message})");
         }
 
         var tokens = (int)(response.Usage?.TotalTokenCount ?? 0);

@@ -55,6 +55,13 @@ public sealed record DependencyUpdate(
     UpdateKind Kind = UpdateKind.Matched,
     bool BeyondPolicy = false);
 
+/// <summary>What caused a run: the scheduler, or a person using Run now.</summary>
+public enum RunTrigger
+{
+    Scheduled,
+    Manual,
+}
+
 /// <summary>
 /// A remediation run for one repository: bumps matched outdated packages and opens a
 /// pull request. Tracks status, the applied updates, the resulting PR, and any error.
@@ -63,9 +70,10 @@ public sealed class RemediationRun : Entity<Guid>
 {
     private readonly List<DependencyUpdate> _updates = [];
 
-    public RemediationRun(Guid id, Guid repositoryId, string repositorySlug, DateTimeOffset startedAtUtc)
+    public RemediationRun(Guid id, Guid repositoryId, string repositorySlug, DateTimeOffset startedAtUtc, RunTrigger trigger = RunTrigger.Scheduled)
         : base(id)
     {
+        Trigger = trigger;
         RepositoryId = repositoryId;
         RepositorySlug = Guard.AgainstNullOrWhiteSpace(repositorySlug);
         StartedAtUtc = startedAtUtc;
@@ -75,6 +83,9 @@ public sealed class RemediationRun : Entity<Guid>
     public Guid RepositoryId { get; }
     public string RepositorySlug { get; }
     public DateTimeOffset StartedAtUtc { get; }
+
+    /// <summary>What caused the run. <see cref="RunTrigger.Scheduled"/> unless a person used Run now.</summary>
+    public RunTrigger Trigger { get; }
     public DateTimeOffset? FinishedAtUtc { get; private set; }
     public RunStatus Status { get; private set; }
     public IReadOnlyList<DependencyUpdate> Updates => _updates;
@@ -236,9 +247,10 @@ public sealed class RemediationRun : Entity<Guid>
         string? remediationTranscriptReference = null,
         string? proposalReference = null,
         string? reviewNote = null,
-        int reviewCommandCount = 0)
+        int reviewCommandCount = 0,
+        RunTrigger trigger = RunTrigger.Scheduled)
     {
-        var run = new RemediationRun(id, repositoryId, repositorySlug, startedAtUtc)
+        var run = new RemediationRun(id, repositoryId, repositorySlug, startedAtUtc, trigger)
         {
             Status = status,
             FinishedAtUtc = finishedAtUtc,

@@ -79,10 +79,64 @@ public class DependencyMapServiceTests
         Assert.All(map.Entries, e => Assert.Equal(DependencyStatus.Unknown, e.Status));
     }
 
-    private static ServiceProvider BuildProvider(TargetingSettings settings, IReadOnlyDictionary<string, IReadOnlyList<string>> versions)
+    [Fact]
+    public async Task Repo_only_pattern_maps_its_package_for_that_repository_only()
     {
-        var repo = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api");
+        var global = new TargetingSettings(["Contoso.*"], feeds: ["https://feed"], policy: new UpdatePolicy(UpdateStrategy.Major, []));
+        var withOverride = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "billing",
+            settings: new RepositorySettings(patterns: ["Fabrikam.*"]));
+        var inheriting = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api");
+        var versions = new Dictionary<string, IReadOnlyList<string>>
+        {
+            ["Contoso.Core"] = ["1.0.0", "2.5.0"],
+            ["Fabrikam.Widgets"] = ["1.0.0", "1.1.0"],
+        };
 
+        var ado = new FakeAdo(ManifestWithFabrikam);
+        await using var provider = BuildProvider(global, versions, [withOverride, inheriting], ado);
+        var map = await provider.GetRequiredService<IDependencyMapService>().BuildAsync(TestContext.Current.CancellationToken);
+
+        var fabrikam = Assert.Single(map.Entries, e => e.PackageId == "Fabrikam.Widgets");
+        Assert.Equal(withOverride.Slug, fabrikam.RepositorySlug);
+        Assert.Contains(map.Entries, e => e.RepositorySlug == withOverride.Slug && e.PackageId == "Contoso.Core");
+        Assert.DoesNotContain(map.Entries, e => e.RepositorySlug == inheriting.Slug && e.PackageId.StartsWith("Fabrikam"));
+        Assert.Contains(map.Entries, e => e.RepositorySlug == inheriting.Slug && e.PackageId == "Contoso.Core");
+    }
+
+    [Fact]
+    public async Task Repository_without_effective_patterns_is_skipped_and_not_read()
+    {
+        var global = new TargetingSettings(["Contoso.*"], feeds: ["https://feed"]);
+        var empty = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "isolated",
+            settings: new RepositorySettings(inheritGlobal: false));
+        var normal = new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api");
+
+        var ado = new FakeAdo(Manifest);
+        await using var provider = BuildProvider(global, new Dictionary<string, IReadOnlyList<string>>(), [empty, normal], ado);
+        var map = await provider.GetRequiredService<IDependencyMapService>().BuildAsync(TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(map.Entries, e => e.RepositorySlug == empty.Slug);
+        Assert.NotEmpty(map.Entries);
+        Assert.DoesNotContain(empty.Slug, ado.ManifestReads);
+        Assert.Contains(normal.Slug, ado.ManifestReads);
+    }
+
+    private const string ManifestWithFabrikam = """
+        <Project>
+          <ItemGroup>
+            <PackageVersion Include="Contoso.Core" Version="1.0.0" />
+            <PackageVersion Include="Fabrikam.Widgets" Version="1.0.0" />
+          </ItemGroup>
+        </Project>
+        """;
+
+    private static ServiceProvider BuildProvider(TargetingSettings settings, IReadOnlyDictionary<string, IReadOnlyList<string>> versions)
+        => BuildProvider(settings, versions, [new ManagedRepository(Guid.NewGuid(), "contoso", "platform", "web-api")], new FakeAdo(Manifest));
+
+    private static ServiceProvider BuildProvider(
+        TargetingSettings settings, IReadOnlyDictionary<string, IReadOnlyList<string>> versions,
+        IReadOnlyList<ManagedRepository> repos, FakeAdo ado)
+    {
         var builder = Host.CreateApplicationBuilder();
         builder.Configuration["ConnectionStrings:tables"] = "UseDevelopmentStorage=true";
         builder.Configuration["ConnectionStrings:blobs"] = "UseDevelopmentStorage=true";
@@ -93,9 +147,9 @@ public class DependencyMapServiceTests
         builder.Services.RemoveAll<ITargetingSettingsStore>();
         builder.Services.RemoveAll<IAzureDevOpsClient>();
         builder.Services.RemoveAll<IFeedVersionResolver>();
-        builder.Services.AddSingleton<IManagedRepositoryStore>(new FakeRepoStore([repo]));
+        builder.Services.AddSingleton<IManagedRepositoryStore>(new FakeRepoStore(repos));
         builder.Services.AddSingleton<ITargetingSettingsStore>(new FakeSettingsStore(settings));
-        builder.Services.AddSingleton<IAzureDevOpsClient>(new FakeAdo(Manifest));
+        builder.Services.AddSingleton<IAzureDevOpsClient>(ado);
         builder.Services.AddSingleton<IFeedVersionResolver>(new FakeResolver(versions));
 
         return builder.Services.BuildServiceProvider();
@@ -117,9 +171,16 @@ public class DependencyMapServiceTests
 
     private sealed class FakeAdo(string manifest) : IAzureDevOpsClient
     {
+        /// <summary>Slugs of the repositories whose manifests were read.</summary>
+        public List<string> ManifestReads { get; } = [];
+
         public Task<bool> RepositoryExistsAsync(ManagedRepository r, CancellationToken ct = default) => Task.FromResult(true);
         public Task<IReadOnlyList<RepositoryFile>> GetManifestsAsync(ManagedRepository r, CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<RepositoryFile>>([new RepositoryFile("/Directory.Packages.props", manifest)]);
+        {
+            ManifestReads.Add(r.Slug);
+            return Task.FromResult<IReadOnlyList<RepositoryFile>>([new RepositoryFile("/Directory.Packages.props", manifest)]);
+        }
+
         public Task<string?> GetBranchHeadAsync(ManagedRepository r, string branch, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public Task<Stream> GetRepositoryArchiveAsync(ManagedRepository r, string commitId, CancellationToken ct = default)
             => throw new NotSupportedException("the dependency map never verifies");

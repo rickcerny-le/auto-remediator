@@ -9,8 +9,9 @@ namespace AutoRemediator.Agents.Tests;
 /// that the registration wired from a connection string produces a working client, and that a real
 /// model's reply survives our parser.
 ///
-/// Skips unless <c>AUTOREMEDIATOR_CHAT_CONNECTION</c> names a reachable model, so the suite stays
-/// runnable without Foundry Local. Deliberately asserts **mechanics, not repair quality** — a local
+/// Skips unless <c>AUTOREMEDIATOR_CHAT_CONNECTION</c> names a reachable model, in the form
+/// <c>Endpoint=http://localhost:11434;Model=&lt;name&gt;</c> (take the real Ollama port from
+/// <c>aspire describe</c>), so the suite stays runnable without Ollama. Deliberately asserts **mechanics, not repair quality** — a local
 /// development model is far weaker at this task than a deployed one, and asserting a fix would be
 /// asserting a property of the model rather than of this system.
 /// </summary>
