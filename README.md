@@ -99,8 +99,10 @@ aspire resource scheduler start     # once api is running and local-scenarios-en
 Nothing needs generating or enrolling by hand: the AppHost builds the scenario feed and demo repos
 under `.local` when they are missing or stale (about 85 s cold, a few seconds when current),
 enrolls them through the API (a global baseline plus each repo's own settings), and gives `api`, `scheduler` and
-`remediation` `AzureDevOps__Mode=Local`. The scheduler is not automatic: start it when you want a
-pass. Other variables: `LocalRepos__Root` (default `.local`), `LocalRepos__ResetOnStart` (default `true`)
+`remediation` `AzureDevOps__Mode=Local`. Each scenario repo carries its own settings over the global baseline
+(see `tools/local-scenarios/scenarios.psd1`). The scheduler is not automatic: start it when you want a
+pass (the first pass after a start runs every enabled repo; later passes run only the repos that are due), or use
+**Run now** on a single repository from the Configuration page. Other variables: `LocalRepos__Root` (default `.local`), `LocalRepos__ResetOnStart` (default `true`)
 and `LocalRepos__RunOnStart` (default `false`; `true` starts the scheduler automatically). To reset
 the repos between runs without a rebuild, start the `local-scenarios-reset` resource
 (`aspire resource local-scenarios-reset start`).

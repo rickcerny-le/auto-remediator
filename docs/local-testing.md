@@ -42,7 +42,8 @@ Nothing else is needed: no script to run first and no enrollment step. The AppHo
    applies the global baseline and each repo's own settings from the catalogue. It finishes in under a second.
    A default start enrolls 16 repositories: 15 enabled plus `disabled-repo`, which is enrolled disabled.
 4. **`scheduler`** does **not** start by itself in local mode. When the resources are `Running` and enrollment has
-   finished, start a pass over every enabled repo:
+   finished, start the first pass, which runs every enabled repo (or skip it and use Run now on any single repo, see
+   [Scheduling and Run now in local mode](#scheduling-and-run-now-in-local-mode)):
 
    ```powershell
    aspire resource scheduler start
@@ -95,14 +96,14 @@ An unparseable boolean counts as the default. The per-repo settings are the tabl
 | Resource | Start | What it does |
 | --- | --- | --- |
 | `local-scenarios` | automatic | Provision: rebuild when stale, otherwise skip, then fast reset unless `ResetOnStart=false`. |
-| `local-scenarios-reset` | explicit | The fast reset only (see [Resetting between profiles](#resetting-between-profiles)). |
+| `local-scenarios-reset` | explicit | The fast reset only (see [Resetting between runs](#resetting-between-runs)). |
 | `local-scenarios-enroll` | automatic, after `api` is healthy | Enrolls the repos with their own settings and applies the global baseline. |
 | `scheduler` | explicit (unless `RunOnStart=true`) | Runs one pass over every enabled repo, then exits. |
 | `held-run-seeder` | explicit | Seeds the held run for [the review gate](#8-review-gate). |
 
 All three `local-scenarios*` resources run the `LocalScenarioSetup` tool, which calls the PowerShell scripts in
-`tools/local-scenarios`. Its exit code is the script's exit code: `0` success, `1` failure (a failed self-check, an
-invalid profile, the API not healthy within 120 s, stale output for a reset), `2` a required tool is missing from PATH,
+`tools/local-scenarios`. Its exit code is the script's exit code: `0` success, `1` failure (a failed self-check, a
+removed `--profile` argument, the API not healthy within 120 s, stale output for a reset), `2` a required tool is missing from PATH,
 `3` another generator holds the lock. Aspire shows a non-zero exit as `Finished <code>`, resources that wait for a failed
 resource go to `FailedToStart`, and `web` stays `Waiting` if `api` failed.
 
@@ -164,6 +165,10 @@ cold (the last run's finish was not timed in that cold session; estimated from t
 
 Executed once on 2026-10-14 (task 07), `LocalRepos__Enabled=true`, `Model__Enabled=false`, every step below through
 `aspire start` / `aspire stop` (never `dotnet run` on the AppHost). Run ids are the first 8 characters.
+
+Historical: this check ran under the 002/003 design, before per-repository settings. "Profile" in it (and the
+`-Profile` switch) means the four global settings profiles (`baseline`, `patch`, `major`, `prerelease`) that no longer
+exist; the results are kept as findings.
 
 1. **Automated checks** (AppHost stopped): `dotnet build AutoRemediator.sln` 0 errors (1 warning, ASPIRE010).
    `dotnet test AutoRemediator.sln`: Tools 37 passed, Domain 66, Workers 13, Api 35, Agents 26 passed + 2 skipped,
@@ -270,10 +275,66 @@ The per-repo settings are in the table in [section 7](#7-expected-results-and-ac
 
 `disabled-repo` is enrolled disabled, `missing-branch` targets `develop`, and `does-not-exist` has no folder.
 
+## Per-repository settings
+
+Targeting settings and the schedule are layered: one **global baseline** plus optional settings on each repository.
+The whole pipeline (analysis, planning, verification, Rebuild and Retry, the dependency map) uses the **effective
+settings** for the repository it works on.
+
+- **The global local baseline** (applied at enrollment from `GlobalSettings` in
+  [`scenarios.psd1`](../tools/local-scenarios/scenarios.psd1)): patterns `Contoso.*`, `Fabrikam.*`, `Northwind.*`,
+  `Tailspin.*`, the local feed (`<root>/feed`), no excludes, no ignore, Minor, no pre-release and no default schedule,
+  so the built-in `0 0 * * *` (daily, 00:00 UTC) applies.
+- **Each scenario repo** adds or overrides settings in its own `Settings` entry in `scenarios.psd1` (for example
+  `patch-bump`: Strategy Patch and schedule `0 3 * * *`; `major-compiles`: Major; `prerelease`: AllowPrerelease;
+  `ignored-package`: Ignore `Tailspin.Legacy.*`). A repo without `Settings` inherits everything. The table in
+  [section 7](#7-expected-results-and-actual-results) lists each repo's settings next to its expected result.
+- **Inheritance rule.** Lists (patterns, excludes, feeds, ignore) are the union of the global list and the repo's
+  list, global entries first, de-duplicated case-insensitively. Scalars (strategy, pre-release) are the repo's value
+  when it sets one, otherwise the global value.
+- **The inheritance switch.** `InheritGlobal = false` makes a repo ignore the global targeting settings entirely: only
+  its own lists apply, and an unset strategy or pre-release flag falls back to the built-in defaults (Minor, no
+  pre-release). The schedule is not covered by the switch (an unset repo schedule still uses the global default
+  schedule). `local-only` demonstrates it: it does not inherit and targets `AdventureWorks.*` through the local feed
+  only (AdventureWorks.Text 1.0.0 -> 1.5.0), so `Contoso.*` packages in it are ignored and absent from its dependency
+  map. A repo that does not inherit and has no patterns matches nothing (every run ends `NoUpdates`), and the
+  effective view shows a warning.
+- **Where to see the effective settings.** Open the repository from the Configuration page
+  (`/configuration/repositories/<id>`): the "Effective settings" table shows every value with its source (`Global`,
+  `Repository`, `Both` or `Default`), the warnings, and the last and next scheduled times. The same data is
+  `GET /api/repositories/<id>/effective-settings`; the repository's own settings are `GET`/`PUT
+  /api/repositories/<id>/settings`.
+
+Enrollment resets every repo's settings to the catalogue, so edits made in the UI survive only until the next
+enrollment (see [section 4](#4-enroll-manually)).
+
+## Scheduling and Run now in local mode
+
+- **The first scheduler pass after `aspire start` runs every enabled repo.** Azurite is not persisted, so every repo is
+  never-scheduled, and a never-scheduled repo is due at the next tick. `disabled-repo` is not evaluated.
+- **Later scheduler starts enqueue only due repos.** A repo is due when the next occurrence of its cron schedule after
+  its last scheduled time has passed. With the built-in daily default `0 0 * * *`, none are due until after the next
+  00:00 UTC (the one exception is `patch-bump`, whose `0 3 * * *` is due after 03:00 UTC). The scheduler logs
+  `Scheduler tick complete: enqueued N, skipped held N, not due N, claimed elsewhere N.`
+- **Run now re-runs one repo.** Use the button on the Configuration page or the repository page, or
+  `POST /api/repositories/<id>/run`; it answers 202 `{ runId, enabled }` and the run shows a `Manual` badge. It is
+  refused with 409 (`reason: held`, with the held run id) while a repo is held for review. It works on disabled repos:
+  disabled means "not scheduled", so `disabled-repo` runs on demand (Contoso.Logging 1.2.0 -> 1.2.3) and stays
+  disabled and unscheduled. Run now does not touch a repo's schedule state.
+- **The scheduler's dev loop acts as a tick.** Set `Scheduler__DevLoopEnabled=true` (and
+  `Scheduler__DevLoopIntervalSeconds`) before `aspire start`; the AppHost forwards both, so `scheduler` keeps running
+  and each loop iteration evaluates which repos are due. This is how to watch due and not-due behaviour. The minimum
+  accepted per-repo interval is 15 minutes (a schedule like `*/15 * * * *` is the fastest).
+- After many Run now pushes to the same repo, use [Resetting between runs](#resetting-between-runs): each re-run adds
+  to the update branch (finding 1).
+
 ## 5. Trigger runs
 
-The scheduler runs once when it starts, then exits. In local mode it is an explicit-start resource, so the first pass
-is a start and each later pass is a restart (or a start again: both work on a finished scheduler). `restart` on a
+The scheduler runs one tick when it starts, then exits; a tick enqueues only the repos that are due (see
+[Scheduling and Run now in local mode](#scheduling-and-run-now-in-local-mode)). In local mode it is an explicit-start
+resource, so the first pass is a start and each later pass is a restart (or a start again: both work on a finished
+scheduler). Because Azurite is not persisted, the first pass after `aspire start` covers every enabled repo; a later
+pass enqueues only due repos, so to re-run one repo use Run now. `restart` on a
 scheduler that has never been started fails (`Failed to restart resource 'scheduler': ... NotFound`), so use `start`
 for the first pass:
 
@@ -310,10 +371,10 @@ automatically.
 
 ## 7. Expected results and actual results
 
-Each repo, per profile. "Actual" is what was observed; run ids are the first 8 characters. `Completed` always means
-the update branch exists, `.local/prs/<repo>/1.json` exists, a PR link is shown and verification was `Verified`.
-Where the Actual column says "as expected" the outcome matched the expected cell exactly (statuses, versions and
-flags were read from `/api/runs/<id>` and the git repo, not inferred).
+Each repo, under its own settings. "Actual" is what was observed; run ids are the first 8 characters. `Completed`
+always means the update branch exists, `.local/prs/<repo>/1.json` exists, a PR link is shown and verification was
+`Verified`. Where the Actual column says "as expected" the outcome matched the expected cell exactly (statuses,
+versions and flags were read from `/api/runs/<id>` and the git repo, not inferred).
 
 ### Per-repo settings (current)
 
@@ -358,9 +419,10 @@ Observations from the same session:
 - `LocalRepos__Profile` is obsolete: setting it prints `AppHost: LocalRepos__Profile is obsolete and ignored ...` once
   at startup and changes nothing.
 
-The per-profile matrices below are the 002/003 results, kept as findings; their "profile" columns no longer apply.
+The four matrices below are the 002/003 results under the retired global settings profiles, kept as findings. They no
+longer apply to a current start: use the per-repo table above.
 
-### baseline (Minor), 002/003 profile results
+### Historical: baseline profile (Minor), 002/003
 
 | Repo | Expected | Actual |
 | --- | --- | --- |
@@ -383,7 +445,7 @@ The per-profile matrices below are the 002/003 results, kept as findings; their 
 Re-running the scheduler without resetting produced no second PR record for any repo (see finding 1 for the one
 side effect).
 
-### patch
+### Historical: patch profile, 002/003
 
 | Repo | Expected | Actual |
 | --- | --- | --- |
@@ -398,7 +460,7 @@ side effect).
 | lock-file | -> 1.2.3 with lock file | as expected (8dab4f62) |
 | held-review, missing-branch, does-not-exist | NoUpdates | as expected (f7791e93, 45e55140, 1e9fb8bd) |
 
-### major
+### Historical: major profile, 002/003
 
 | Repo | Expected | Actual |
 | --- | --- | --- |
@@ -415,7 +477,7 @@ side effect).
 | held-review | (normal repo here) | VerificationFailed, CS1061, 0 attempts (1b1b26a1), same as `major-breaking`: it has the same code |
 | missing-branch, does-not-exist | NoUpdates | as expected (9906e56e, 8718ca92) |
 
-### prerelease (Minor + pre-release)
+### Historical: prerelease profile (Minor + pre-release), 002/003
 
 | Repo | Expected | Actual |
 | --- | --- | --- |
@@ -429,8 +491,9 @@ side effect).
 
 ### Non-agentic check (actual)
 
-Under the `major` profile with `Model__Enabled=false`, `major-breaking` run
-`9bc6385b-c7b5-4bae-9fb4-69868b8738b5`:
+Under `major-breaking`'s own settings (Strategy Major) with `Model__Enabled=false`, run
+`9bc6385b-c7b5-4bae-9fb4-69868b8738b5` (observed in 002 under the retired `major` profile; the per-repo run in the
+table above matched it):
 
 - status `VerificationFailed`; update `Northwind.Messaging 3.2.0 -> 4.0.0`
 - verification `DependencyFailure` (shown as "rejected"), one diagnostic `CS1061` at `src/App/Program.cs:1:38`
@@ -448,18 +511,12 @@ For every `Completed` run in every pass, the file list from `/api/runs/<id>/pull
 `held-review` after Approve: `Directory.Packages.props`, `src/App/Program.cs`). The page-level Playwright tests also
 passed against these runs (see [Automated checks](#9-automated-checks-against-the-running-app)).
 
-## Resetting between runs (the profiles are gone)
+## Resetting between runs
 
-The global profiles no longer exist: per-repo settings are applied at enrollment. The text below keeps the 002/003
-reasoning about resetting; "profile" in it means the old global profiles.
-
-Settings were global, so switching profile changed behaviour for every repo. A re-run reuses the existing
-`autoremediator/dependency-updates` branch and PR record, which is where the PRD "base mismatch in planning" known
-defect can show up. So reset before each profile.
-
-### Resetting between profiles
-
-Reset the repos and pull request records without a rebuild (a few seconds), with either:
+A re-run (a second scheduler pass or Run now) reuses the existing `autoremediator/dependency-updates` branch and PR
+record, which is where the PRD "base mismatch in planning" known defect can show up, and it adds a commit to the
+branch each time (finding 1). Run now makes re-runs easy, so reset the repos and pull request records when you want a
+clean slate. A reset takes a few seconds and needs no rebuild:
 
 ```powershell
 aspire resource local-scenarios-reset start
@@ -467,24 +524,9 @@ aspire resource local-scenarios-reset start
 pwsh -NoProfile -File tools/local-scenarios/New-LocalScenarios.ps1 -Reset
 ```
 
-Then pick the profile in one of two ways:
-
-- **Restart the AppHost** with the new profile. This is the simplest: a default start already resets (provisioning
-  plus reset is about 4 s warm) and enrolls the profile.
-
-  ```powershell
-  aspire stop
-  $env:LocalRepos__Profile='patch'; aspire start
-  aspire resource scheduler start
-  ```
-
-- **Keep the app running**: apply the profile through the API, then run another pass.
-
-  ```powershell
-  aspire resource local-scenarios-reset start
-  pwsh -NoProfile -File tools/local-scenarios/Set-LocalScenarioConfig.ps1 -ApiUrl http://localhost:5228 -Profile patch
-  aspire resource scheduler restart
-  ```
+A default `aspire start` already resets (provisioning plus reset is about 4 s warm), so restarting the AppHost is
+the simplest full reset. The reset does not clear Azurite: run history, schedule state and the enrolled repositories
+and their settings stay, so after a reset use Run now (or wait until a repo is due) for the next run.
 
 What a reset does: for every demo repo it prunes worktrees, puts the repo on `main`, discards uncommitted changes and
 untracked files, and deletes every `autoremediator/*` branch; it also empties `<root>/prs`. What it never touches:
@@ -498,8 +540,8 @@ applies to a manual `-Reset` or `-Force` run outside Aspire. Observed when tried
 6 s into a pass exited 0 and left two `Completed` runs without a branch or PR record; a `-Force` 6 s into a pass also
 exited 0 (86 s) and the runs that were still going ended `NoUpdates` or `VerificationFailed` against the rebuilt repos.
 
-The walkthrough used the quick reset between profiles (after the first, freshly generated, pass). When profile
-`baseline` was re-applied on top of the `patch` results **without** resetting, `minor-bump` still pushed the correct
+Historical (002/003): the walkthrough used the quick reset between the old global profiles (after the first, freshly
+generated, pass). When profile `baseline` was re-applied on top of the `patch` results **without** resetting, `minor-bump` still pushed the correct
 2.4.1 content (the planner reads `main`, and the push overwrites the files), so the base-mismatch defect did not
 show up in this scenario; it only added another commit to the branch.
 
@@ -508,8 +550,11 @@ show up in this scenario; it only added another commit to the branch.
 `AwaitingReview` normally needs a model to repair a compile break, so it is seeded. The seeder is an
 explicit-start Aspire resource that exists only in local mode and gets the Azurite connection strings injected.
 
-The repos are already enrolled at startup, so the seeder needs nothing first. Optionally enable only `held-review` so a
-scheduler pass touches just that repo:
+The repos are already enrolled at startup, so the seeder needs nothing first. Run it **before** the first scheduler
+pass if you want to see `SkippedHeld`: only the first pass covers every repo, and a later pass enqueues only due repos
+(so `held-review`, on the built-in daily schedule, is not due and records nothing). Once a repo is held, Run now's 409
+(`POST /api/repositories/<id>/run`, reason `held`, with the held run id) is the always-available signal. Optionally
+enable only `held-review` so a scheduler pass touches just that repo:
 
 ```powershell
 pwsh -NoProfile -File tools/local-scenarios/Set-LocalScenarioConfig.ps1 -ApiUrl http://localhost:5228 -Only held-review   # optional
@@ -530,10 +575,11 @@ the buttons use (HTTP 202 each):
 | Rebuild | re-verify at the current head | stays `AwaitingReview`, note cleared, proposal `verifiedAtUtc` refreshed, `reviewCommandCount` 2 |
 | Approve | push the stored proposal, open the PR | `Completed`, branch commit with both files, `.local/prs/held-review/1.json`, PR link and the "Pull request changes" panel listing both files. The run's `updates` list is empty afterwards (finding 3) |
 | Discard | run closed, nothing pushed | run e19138d8: `Discarded`; the update branch from the Approve was left as it was |
-| Scheduler pass while held | `SkippedHeld` | restart `scheduler` with a held run: `SkippedHeld` run ddc0e900 for `held-review` (others unaffected) |
+| Scheduler pass while held | `SkippedHeld` (only when the repo is due, e.g. the first pass after seeding) | restart `scheduler` with a held run: `SkippedHeld` run ddc0e900 for `held-review` (others unaffected; 002/003, when every pass covered every repo) |
+| Run now while held | refused, 409 `held` with the held run id | see the per-repo table in section 7 |
 
 After Approve or Discard the run is no longer held, so starting the seeder again seeds a new run (e19138d8, then
-0bc07dee). To reset the scenario, start `local-scenarios-reset` (see [Resetting between profiles](#resetting-between-profiles)).
+0bc07dee). To reset the scenario, start `local-scenarios-reset` (see [Resetting between runs](#resetting-between-runs)).
 
 ## 9. Automated checks against the running app
 
@@ -576,7 +622,19 @@ the first run whose diff link is set; it passed here after a clean baseline pass
   within 120 s), fix the cause, run `aspire resource local-scenarios-enroll start`, then start `scheduler`. If you set
   `LocalRepos__RunOnStart=true`, the scheduler did not start either (it waits for enrollment), so start it yourself
   after enrollment succeeds.
-- **`LocalRepos__Profile`**: obsolete. It is ignored (the AppHost prints a one-line notice); nothing fails.
+- **`LocalRepos__Profile` is set**: obsolete and ignored, nothing fails. The AppHost prints `AppHost:
+  LocalRepos__Profile is obsolete and ignored: each scenario repo carries its own settings (see
+  docs/local-testing.md).` once at startup. Unset it; per-repo settings come from `scenarios.psd1`.
+- **A schedule is rejected with 400**: `PUT /api/repositories/<id>/settings` (or `PUT /api/settings` for the default
+  schedule) returns a `ValidationProblem` keyed by field (`schedule`, `defaultSchedule`). Schedules are standard
+  5-field cron in UTC (no seconds field) and must not fire more often than every 15 minutes; `*/15 * * * *` is the
+  fastest accepted. `PUT /api/settings` also answers 400 for an unknown strategy (it used to coerce to Minor).
+- **Run now says the repo is held**: 409 with `reason: held` and the held run id means the repo has a run in
+  `AwaitingReview`. Approve, Retry-then-Approve or Discard it on the run page, then Run now again. A disabled repo is
+  not refused; only a held one is.
+- **A scheduler pass enqueued nothing**: later passes enqueue only due repos (see [Scheduling and Run now in local
+  mode](#scheduling-and-run-now-in-local-mode)); the log line `Scheduler tick complete: enqueued 0 ... not due N`
+  says so. Use Run now for a single repo.
 - **Run ends `Skipped` with NU1301**: a feed path problem (source unreachable is classed as environmental, and the
   change would still be pushed "verification skipped"). The generated `NuGet.config` files use absolute paths; a
   relative path in a demo repo's `NuGet.config` breaks inside the temp workspace.
@@ -598,8 +656,8 @@ the first run whose diff link is set; it passed here after a clean baseline pass
 - **Run history surviving regeneration**: if Azurite is kept running while you regenerate, old runs still reference
   commits that no longer exist (see the 404 above). Restart the AppHost for a clean history.
 - **Scheduler restarted but nothing happens**: the resource restart returns immediately; follow
-  `aspire logs remediation`. A pass over 14 enabled repos took about 30 s. The scheduler does not start by itself
-  (unless `LocalRepos__RunOnStart=true`): `aspire resource scheduler start`.
+  `aspire logs remediation`. A pass over 14 enabled repos took about 30 s (the first pass after a start). The scheduler
+  does not start by itself (unless `LocalRepos__RunOnStart=true`): `aspire resource scheduler start`.
 
 ## Findings
 
@@ -609,7 +667,8 @@ Divergences and surprises from the executed walkthrough. None of these were fixe
    update branch, pushes a new commit with an identical tree onto `autoremediator/dependency-updates`
    (`patch-bump`: `1eced66` after `c5812dc`, no file difference; run `a89fedff-a847-4661-a417-855661952621`,
    status `Completed`, 1 update). The PR record is refreshed (`headCommit`, `updatedAtUtc`) and no second record
-   is created, as designed, but the branch grows by an empty commit per pass.
+   is created, as designed, but the branch grows by an empty commit per pass. Run now makes re-runs of one repo
+   routine, so this now happens much more easily (each Run now on a repo with an existing update branch adds one).
 2. **"AI remediation" wording is wrong for a no-model run.** Run `9bc6385b-c7b5-4bae-9fb4-69868b8738b5` (0 attempts,
    transcript "No model is configured") renders: "A compile break in this run was handed to an AI agent, which proposed
    source edits that were re-verified. The attempts did not produce a building tree, so no pull request was opened."
@@ -651,7 +710,8 @@ Divergences and surprises from the executed walkthrough. None of these were fixe
     detected. The earlier doc claim that `-Force` would "fail on files the running app holds" did not happen here.
 11. **`restart` of a never-started explicit resource fails** with a 404 from the orchestrator (`scheduler`). The docs
     already said "start" for the first pass; this just confirms why.
-12. **Cosmetic, enrollment failure.** For an invalid profile the last log line of `local-scenarios-enroll` is the
+12. **Obsolete (004): invalid profiles no longer exist.** *`LocalRepos__Profile` is now ignored, so this cannot
+    happen.* **Cosmetic, enrollment failure.** For an invalid profile the last log line of `local-scenarios-enroll` is the
     "is not valid" message; unlike the provision failures there was no `enroll finished with exit code 1` line in the
     first lines of the tail that were read, though the resource shows `Finished 1`. Not investigated further.
 13. **Doc claims corrected by this run.** "`api` starts about a minute after `aspire start` returns" (it waits for

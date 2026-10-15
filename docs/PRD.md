@@ -79,8 +79,8 @@ existing Terraform is kept but not extended.
 ## 5. System overview
 
 ```
-  scheduler (cron) ─▶ for each enabled, non-held repo ─┐
-  operator "Run now" (UI/API) ─▶ one repo ─────────────┴▶ enqueue RemediationRunRequested
+  scheduler (cron tick) ─▶ for each enabled, non-held repo that is due by its schedule ─┐
+  operator "Run now" (UI/API) ─▶ one repo ──────────────────────────────────────────────┴▶ enqueue RemediationRunRequested
                                                              │ (Service Bus → remediation job, KEDA)
                                                              ▼
    RUN:  Reading → Analyzing → Applying → Verifying → [Remediating] → Pushing → CreatingPR
@@ -111,8 +111,20 @@ one guarantees, distilled from specs that have since been retired.
 
 ### 6.1 Configuration & targeting
 - Persists an explicit, enable/disable-able list of managed repositories (org/project/name +
-  target branch) and global targeting settings (package patterns, excludes, feeds, policy) in
-  Table Storage, editable via API and the web app's Configuration page.
+  target branch) and global targeting settings (package patterns, excludes, feeds, policy, a
+  default schedule) in Table Storage, editable via API and the web app's Configuration page.
+  Repositories can be edited and enabled or disabled in the UI.
+- **Layered settings.** The global settings are a baseline; each repository may carry its own
+  settings on top: lists (patterns, excludes, feeds, ignore) are the union of the global list and
+  the repository's, global entries first and de-duplicated case-insensitively; scalars (strategy,
+  pre-release) are the repository's value when set, otherwise the global one. One **"do not
+  inherit"** switch makes a repository use only its own lists, with unset scalars falling back to
+  the built-in defaults (Minor, no pre-release); the schedule is excluded from the switch.
+- The **effective settings** (the result of that layering) are viewable per repository with the
+  source of every value (`Global`, `Repository`, `Both`, `Default`) and any warnings, in the
+  repository's detail page and over the API. The whole pipeline (analysis, planning,
+  verification, the review commands Rebuild and Retry, and the dependency map) uses the effective
+  settings of the repository it works on.
 
 ### 6.2 Azure DevOps connectivity
 - One authenticated client (PAT from Key Vault in Azure, user-secrets locally) handles reads
@@ -129,7 +141,7 @@ one guarantees, distilled from specs that have since been retired.
   read-only dependency map in the UI.
 
 ### 6.4 Update policy
-- Per-scope strategy (`Patch`/`Minor`/`Major`) selects the highest available version within that
+- Strategy per the effective settings (global, overridable per repository): `Patch`/`Minor`/`Major` selects the highest available version within that
   band relative to the current pin; an ignore-glob list holds matched packages; pre-release
   versions are excluded unless explicitly allowed.
 
@@ -194,14 +206,30 @@ one guarantees, distilled from specs that have since been retired.
 - The state machine (§5) persists every run to Table Storage with a stable idempotency guarantee
   (one message → one run → the existing branch/PR is reused, never duplicated), and skips
   enqueueing a repository that's currently held for review.
+- **Due-based scheduling.** Each repository has a schedule: a 5-field cron expression in UTC
+  (seconds are rejected; no more often than every 15 minutes), from the repository's own settings,
+  else the global default schedule, else the built-in `0 0 * * *` (daily at 00:00 UTC). The
+  scheduler is a run-once tick (every 15 minutes when deployed) that enqueues only repositories
+  that are **due**: never scheduled, or the next occurrence after the last scheduled time has
+  passed. At most one run per repository per tick, whatever number of occurrences were missed (no
+  backfill). A never-scheduled repository is due at the next tick. `SkippedHeld` is recorded
+  only for a held repository that is due. Each repository's last scheduled time lives in the
+  `schedulestate` table and is claimed with an ETag, so overlapping ticks cannot both enqueue it.
+  This replaces the earlier pass that enqueued every enabled repository every 6 hours, so the
+  default cadence is now daily.
 
 ### 6.12 Ad-hoc (manual) runs
 - An operator can start a run for a single repository on demand ("Run now" on the repository in
   the UI, and an API endpoint), outside the schedule. It enqueues the same
   `RemediationRunRequested` message the scheduler does and follows the identical pipeline,
   idempotency, and review-gate rules — including refusing to start while the repository is held
-  for review. The run records that it was manually triggered.
-- **Status:** *not built.* The scheduler is the only trigger today.
+  for review (409, with the held run id). The run records that it was manually triggered
+  (trigger `Manual`, shown as a badge; scheduled runs are `Scheduled`).
+- Run now works on a **disabled** repository, to try a repository before enabling it: disabled
+  means "not scheduled", not "off". It does not change the repository's schedule state.
+- The acting user is recorded on the run once §6.17 lands; it is not recorded today.
+- **Status:** *built.* `POST /api/repositories/{id}/run` (202 `{ runId, enabled }`, 404, 409) and
+  a Run now button on the Configuration page and the repository page.
 
 ### 6.13 Run observability UI
 - API + Web pages for a runs feed (filterable by status) and a run detail view: updates table,
@@ -234,8 +262,9 @@ one guarantees, distilled from specs that have since been retired.
   local model resource lets the AI loop be exercised with zero cloud dependency. The remediation
   worker treats the model as a **soft** dependency — an unavailable model costs only repair
   capability, never the mechanical pipeline. Local process shape (always-running) is documented
-  as distinct from the deployed shape (scheduler = run-once cron ACA Job; remediation = KEDA
-  queue-scaled ACA Job).
+  as distinct from the deployed shape (scheduler = run-once cron ACA Job ticking every 15
+  minutes, Terraform variable `scheduler_tick_cron_expression`; remediation = KEDA queue-scaled
+  ACA Job).
 
 ### 6.16 Platform: solution scaffold & testing
 - Inward-flowing project references (`Domain`/`Contracts` depend on nothing but `Shared`; no
@@ -284,6 +313,8 @@ one guarantees, distilled from specs that have since been retired.
 | Verified / DependencyFailure / Skipped | The three possible local-verification outcomes (§6.7) |
 | AwaitingReview | Terminal-*for now* status holding an AI-repaired, verified change for a human decision |
 | SkippedHeld | A scheduler bookkeeping run recording that a repository was not enqueued because it's currently held |
+| Effective settings | The settings that actually apply to a repository: the global baseline layered with the repository's own settings, with the source of every value (§6.1) |
+| Due (schedule) | A repository is due when it has never been scheduled, or the next occurrence of its cron schedule after its last scheduled time is at or before now (§6.11) |
 
 ## 8. Decisions & open questions
 
@@ -337,6 +368,39 @@ the requirement it became; open items are deliberately deferred.
   alongside the per-run `Agents:TokenBudget`. When exhausted, runs continue mechanically and record
   "AI budget exhausted" — the same soft-dependency path as an unavailable model. Token usage per
   run and per day is visible in-app. **Status:** *not built.*
+- [x] **Per-repository settings and schedules.** *Resolved (feature 004):*
+  - **Layering.** Global settings are the baseline; a repository may add lists and override
+    scalars (§6.1). One "do not inherit" switch covers all targeting fields; the **schedule is
+    excluded** (it is operational, so an unset repository schedule still uses the global default).
+    With the switch off and no patterns, nothing matches and the effective view warns.
+  - **Cron.** Schedules are 5-field cron expressions parsed with Cronos, in UTC only (no
+    per-repository time zones). A global default schedule exists; the built-in default, when
+    neither is set, is `0 0 * * *` (daily at 00:00 UTC).
+  - **Cadence change.** The old scheduler enqueued every enabled repository on every fire, every
+    6 hours. The scheduler is now a 15-minute tick and a repository with no schedule of its own
+    runs once a day at 00:00 UTC. Operators who want the old cadence set the global default
+    schedule to `0 */6 * * *`.
+  - **Minimum interval (assumed, open to revisiting).** Schedules that can fire more often than
+    every 15 minutes are rejected (checked over the next 100 occurrences). This was the planner's
+    recommendation and was kept without an explicit answer; the alternative is to accept such
+    schedules and document that they behave as "every tick".
+  - **Anchor rule and never-scheduled.** The last scheduled time is set to the tick time (claimed
+    with an ETag in `schedulestate`), so there is at most one run per repository per tick and no
+    backfill after downtime. A never-scheduled repository is due at the next tick (a new
+    repository, and every repository right after this feature is deployed, runs at the first
+    tick).
+  - **Terraform.** `scheduler_cron_expression` is renamed `scheduler_tick_cron_expression`
+    (default `*/15 * * * *`) because its meaning changed from cadence to tick; a stale tfvars entry
+    surfaces as an undeclared-variable warning instead of silently becoming a slow tick.
+  - **Run now rules.** Refused (409) while the repository is held for review; allowed on disabled
+    repositories ("disabled" means not scheduled); it does not touch schedule state (§6.12).
+    Runs carry a trigger (`Scheduled` or `Manual`).
+  - **API contract tightening.** `PUT /api/settings` now returns 400 with field-keyed errors for
+    an unknown strategy or an invalid default schedule, where it used to coerce an unknown
+    strategy to Minor.
+  - **Organization routing is out of scope.** The per-repository `Organization` field stays
+    editable but informational: every repository still goes through the single
+    `AzureDevOps:OrganizationUrl` and one PAT (see the known defects).
 
 ### Known defects (found in the 2026-10-13 code review)
 
@@ -351,11 +415,14 @@ the requirement it became; open items are deliberately deferred.
   a metric the system actually knows (e.g. "runs that opened/updated a PR, last 7 days").
 - **Swallowed errors:** Service Bus `ProcessErrorAsync` discards errors silently; feed failures
   collapse into `Unknown` (see feeds decision above).
-- **Configuration UI gaps:** repositories can't be edited or enabled/disabled in the UI (the API
-  supports it); per-repository `Organization` is stored but ignored — one
-  `AzureDevOps:OrganizationUrl` is used for everything.
+- **Configuration UI gaps:** ~~repositories can't be edited or enabled/disabled in the UI (the API
+  supports it)~~ *Fixed by feature 004 (§6.1, §6.12).* Still open: per-repository `Organization`
+  is stored but ignored — one `AzureDevOps:OrganizationUrl` (and PAT) is used for everything. The
+  UI labels the field informational. Routing needs a credential and a client per organization, so
+  it is a feature of its own.
 - **Dependency map is computed live** against Azure DevOps and every feed for every repository on
-  each page load; it should come from the latest run's analysis (or a cached snapshot).
+  each page load; it should come from the latest run's analysis (or a cached snapshot). It now
+  uses each repository's effective settings, but is still live.
 - **Flaky API test suite:** `AutoRemediator.Api.Tests` intermittently times out building the
   host (`WebApplicationFactory`, 5-minute host-factory timeout) — 3–5 of 30 tests fail on `main`.
 - **Missing branch / unknown repository ends as `NoUpdates`:** when the target branch or the
@@ -363,6 +430,40 @@ the requirement it became; open items are deliberately deferred.
   `NoUpdates`, indistinguishable from a healthy repo with nothing to bump. A misconfigured
   enrollment should surface as a failed run with a clear reason. Local repository mode
   (feature 002) deliberately copies this behaviour until it is fixed.
+
+Found in the local-mode walkthroughs and verification (features 002, 003, 004); details in
+[`docs/local-testing.md`](local-testing.md#findings):
+
+- **Empty commit on re-run:** a re-run for a repository that already has the update branch pushes a
+  new commit with an identical tree, so the branch grows by one empty commit per run. Run now makes
+  re-runs routine.
+- **"AI remediation" wording for a no-model run:** with no model configured (0 attempts), the run
+  detail still says a compile break "was handed to an AI agent, which proposed source edits".
+- **Approve clears the run's Updates table:** after Approve a run is `Completed` with an empty
+  `updates` list and no verification object, so the Updates table and the verification section
+  disappear.
+- **Stale PR diff links:** `pullRequestDiffUrl` is set for every `Completed` local run, including
+  runs whose PR record no longer exists; the page then shows a terse "404 Not Found".
+- **`NU1605` triplicate diagnostics:** one restore error (`NU1605` on `restore-conflict`) is shown
+  as three diagnostics because the dependency-chain continuation lines are parsed as separate
+  diagnostics.
+- **Dependents do not recover after a failed local-scenarios provisioning:** after `local-scenarios`
+  fails and later succeeds, `api`, `remediation` and `scheduler` stay `FailedToStart` and must be
+  started by hand.
+- **`-Reset`/`-Force` during a scheduler pass corrupts it:** the generator lock does not guard the
+  running app, so runs in flight end with missing branches or PR records, or against replaced repos.
+- **Transitive vulnerability advisory in Infrastructure:** `System.Security.Cryptography.Pkcs`
+  8.0.1 arrives transitively and is flagged (GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7).
+- **Azurite-backed tests that hardcode the default port skip under Aspire:** the tests use
+  `UseDevelopmentStorage=true`, but Aspire runs Azurite on another port, so they self-skip.
+- **Intermittent test failure:** `VerificationEndToEndTests.No_workspace_directory_survives_a_run`
+  failed intermittently in the full solution run (not in isolation).
+- **Token-usage test fails against Ollama:** the local-model agent test that requires reported token
+  usage failed against Ollama, so the token budget may not be enforced with that provider.
+- **Terraform not validated:** `terraform validate` was not run for the feature 004 changes (the
+  variable rename).
+- **Deployed model setup is still Foundry:** the Terraform/deployed shape still provisions a Foundry
+  model; local mode uses Ollama.
 
 ## 9. Future directions
 
