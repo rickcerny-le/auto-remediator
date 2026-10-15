@@ -1,8 +1,9 @@
 # Local repository mode: manual integration test
 
 This walkthrough runs the whole system on one machine against git repositories and a NuGet folder feed on
-disk, with no Azure DevOps and (by default here) no model. It was executed once end to end on 2026-10-14; the
-**Actual** columns and the [Findings](#findings) are what that run observed. Everything here is dev and test
+disk, with no Azure DevOps and (by default here) no model. It was executed end to end on 2026-10-14 (002/003), and the per-repository settings of feature 004 were checked again
+on 2026-10-15 ([Feature 004 check (actual)](#feature-004-check-actual)); the
+**Actual** columns and the [Findings](#findings) are what those runs observed. Everything here is dev and test
 only: local repository mode (`AzureDevOps:Mode=Local`) uses the `git` binary and is exempt from the product's
 no-clone rule. Startup is automated: set two environment variables, run `aspire start`, and the scenarios are
 built (or confirmed), enrolled and ready for a scheduler pass. See the [quick start](#1-quick-start).
@@ -146,6 +147,7 @@ invoking it (it returns after 10 to 16 s, with the AppHost started in the backgr
 | What | Seconds | Notes |
 | --- | --- | --- |
 | cold `local-scenarios` (rebuild) | 84.9 (also 84.4; 85.0 and 85.2 for the two invalidation rebuilds) | "Feed ready: 29 packages in 85s" |
+| cold `local-scenarios`, 2026-10-15 (feature 004 check) | 255.7 | "Feed ready: 29 packages in 255s": three times the baseline on the same machine, cause not identified (finding 14) |
 | warm `local-scenarios` (skip + reset) | 4.1 (also 3.7 and 4.2) | reset itself 2.0 to 2.8 s, 6 or 7 update branches deleted; one start failed in the reset (finding 8) |
 | warm without reset (`ResetOnStart=false`) | 1.2 | skip only; branches persist |
 | `local-scenarios-reset` resource | 2.9 | the reset step alone, feed and fingerprint hashes unchanged |
@@ -232,6 +234,91 @@ exist; the results are kept as findings.
     **30 passed, 0 failed, 0 skipped** (33 s). The Configuration page (loaded in headless Chromium against the web
     URL, and `/api/repositories`) lists 15 repositories; only `disabled-repo` shows as Disabled, so 14 are enabled.
 
+## Feature 004 check (actual)
+
+Executed on 2026-10-15 (task 12) on the same machine class as above, `LocalRepos__Enabled=true`, `Model__Enabled=false`,
+every step through `aspire start` / `aspire stop` (never `dotnet run` on the AppHost) and the browser parts through a
+headless Chromium (Playwright) script against the running app. Times are UTC from `date -u` and the logs; the clock did
+not jump during the session (earlier sessions saw a jump of about 11 h; it did not recur). No check ran across 00:00 UTC.
+
+1. **Cold start** (`.local` deleted, no profile): `aspire start` returned after 9.4 s. `local-scenarios` logged "Rebuilding
+   local scenarios: scenarios.fingerprint.json is missing", purged 13 package ids, built 29 packages and 15 repos, exit 0 in
+   **255.7 s** (the doc's baseline is 85 s: finding 14). `local-scenarios-enroll` waited for `api`, then enrolled 16 repos
+   (`created`, each with its settings in the table: `Strategy=Patch; Schedule=0 3 * * *`, `no inherit; Patterns=AdventureWorks.*;
+   Feeds={feed}` and so on) and the global baseline, exit 0 in 0.9 s, with no manual script. `/api/repositories` returned the 16
+   repos with their settings, `/api/settings` the baseline with `defaultSchedule: null`. The AppHost log line was "AppHost:
+   repository mode Local (root ...); reset on start true; scheduler explicit start; model disabled": no profile.
+2. **Deprecation** (warm start with `LocalRepos__Profile=major`): the AppHost log has "AppHost: LocalRepos__Profile is obsolete and
+   ignored: each scenario repo carries its own settings (see docs/local-testing.md)." (finding 21 for where it appears).
+   Provision "up to date (fingerprint c9259ed2fb6e); skipping rebuild", reset 15 repos (9 branches, 9 PR entries) in 3.2 s, exit 0
+   in 4.7 s; enrollment applied the same Minor baseline (no profile effect), exit 0 in 0.8 s, done within 60 s of the start
+   (`aspire start` returned after 9 s). Unset again for the later sessions.
+3. **First scheduler pass** (`aspire resource scheduler start` 12:30:06, `held-review` seeded first by `held-run-seeder`, run
+   3c91fe07): "Scheduler tick complete: enqueued 14, skipped held 1, not due 0, claimed elsewhere 0." The first run started 12:30:08,
+   the last finished about 12:30:37 (about 31 s). Every row of the matrix in [section 7](#7-expected-results-and-actual-results)
+   matched (one `SkippedHeld`, f43a2c48). 16 runs in total (14 + the seeded one + the SkippedHeld).
+4. **Not due** (`aspire resource scheduler restart` 12:31:32): "enqueued 0, skipped held 0, not due 15, claimed elsewhere 0", no new runs
+   (so no second `SkippedHeld` either). The effective view of a repo without a schedule: `0 0 * * *` with source `Default`, last
+   scheduled 12:30 UTC, next runs 16, 17 and 18 Oct 00:00 UTC (the UI also shows the local time). `patch-bump` shows `0 3 * * *` (Repo),
+   next 16 Oct 03:00 UTC. A never-scheduled repo's first "next" entry is the current time (`dueAtNextTick: true`); `disabled-repo`
+   has no last or next time, and the UI says "Disabled: not scheduled (Run now still works)" in both rows.
+5. **Inheritance** (`/api/repositories/<id>/effective-settings`, and the page in the UI): `minor-bump` Contoso.Http -> 2.4.1 under the
+   global Minor. `ignored-package` ignore list `Tailspin.Legacy.*` source Repo. `local-only`: patterns `AdventureWorks.*` (Repo), feed
+   (Repo), strategy Minor and pre-release false both source `Default`, no warnings; it bumped AdventureWorks.Text and left
+   Contoso.Logging at 1.2.0; the dependency map lists only AdventureWorks.Text for it. **Global pattern change in the UI:**
+   `Contoso.*` is already in the global baseline, so `AdventureWorks.*` was added instead (the task's literal step is not possible,
+   finding 22). After saving: `local-only` unchanged (`AdventureWorks.*` Repo only), `minor-bump` gained `AdventureWorks.*` with source
+   Global. Reverted in the UI; the API read back the four original patterns.
+6. **Toggle** (`up-to-date`, UI): turning inheritance off shows an info note in the form ("This repository uses only the values below. ...")
+   but **not** the "No package patterns" warning (finding 15). After saving, the effective view shows "No package patterns: nothing
+   will be updated for this repository." (and Strategy and pre-release source `Default`). Run now: run 9cde33a5 `NoUpdates`, `Manual`.
+   Re-enabled inheritance in the UI; warnings cleared.
+7. **Validation** (API `PUT /api/repositories/<id>/settings` and `PUT /api/settings`, and the UI on a repository page and on the global
+   default schedule, each value in turn; every field is keyed `schedule` or `defaultSchedule`, strategy `strategy`, status 400):
+
+   | Value | Message |
+   | --- | --- |
+   | `* * * * * *` | Seconds are not supported; use 5 fields (minute hour day-of-month month day-of-week), UTC. |
+   | `*/5 * * * *` | Schedules more frequent than every 15 minutes are not supported. |
+   | `nonsense` | Invalid cron expression: The given cron expression has an invalid format. Minutes: Value must be a number between 0 and 59 (all inclusive). |
+   | `0 0 31 2 *` | This cron expression never fires. |
+   | strategy `Bogus` | Strategy must be Patch, Minor or Major. |
+
+   The UI showed the same message under the field with `aria-invalid="true"` and `aria-describedby` containing the error element's id
+   (and the help text); the "Not saved: fix this field ..." summary has `role="alert"` and the status line (`role="status"`) says
+   "Settings were not saved. Fix the highlighted fields." The per-field error element has no role of its own, and focus is on
+   `body` after the failed save (finding 17). A valid `0 3 * * *` saved (200).
+8. **Run now** (Configuration page buttons): `patch-bump` run 9d7da0ef Completed, `Manual`, PR record created, 3.4 s from the click to
+   the finished run. `disabled-repo`: the row says "Disabled: not scheduled", the status says "Run queued for disabled-repo. ...
+   disabled-repo is disabled and will not run on schedule.", run fe5e19e3 Completed, `Manual`, Contoso.Logging 1.2.0 -> 1.2.3, the repo
+   still disabled afterwards, and the following ticks enqueued nothing for it. `held-review`: "held-review is held for review; resolve
+   the held run first. Open the held run", a link to /runs/3c91fe07-...; the API answered 409 `{reason: held, heldRunId, message}`.
+   Unknown id 404. The Runs page showed the `Manual` badge on the three manual runs, the run detail page one badge on a manual run
+   and none on a scheduled run. A second Run now on `patch-bump` after a reset added an empty commit (2 commits on the branch, empty
+   diff between them): finding 1 again, not a new finding.
+9. **Dev loop** (`Scheduler__DevLoopEnabled=true`, `Scheduler__DevLoopIntervalSeconds=60`, warm start with `held-review` seeded 12:45:08):
+   scheduler started 12:45:26, first tick "enqueued 14, skipped held 1, not due 0"; every later tick "enqueued 0, skipped held 0, not
+   due 15". `up-to-date` was given `0 13 * * *` in the UI at 12:46 (page: last scheduled 15 Oct 12:45 UTC, next runs 15 Oct 13:00,
+   16 Oct 13:00, 17 Oct 13:00 UTC, matching the stored value). At the first tick after 13:00 (run started 13:00:31, run d04f1689,
+   `Scheduled`) the log said "enqueued 1, skipped held 0, not due 14"; the next ticks were "not due 15" again, and the page then showed
+   last scheduled 13:00 UTC and next 16 Oct 13:00 UTC. Exactly one run, once.
+10. **Reset resource** (`aspire resource local-scenarios-reset start`, with the dev loop idle): 3.6 s (reset 2.4 s, 9 update branches and
+    9 PR entries deleted, `.local/prs` empty, only `main` left). Azurite state (runs, schedule state, repos) stayed: the effective
+    view kept its last scheduled time.
+11. **Held run before the first pass**: seeding before the first tick gave exactly one `SkippedHeld` in both sessions (3c91fe07 / f9232de4
+    were the held runs). Run now on the held repo gave 409 with the link in both.
+12. **Automated checks.** Functional suite against the running app (`WEB_BASE_URL` set, `ConnectionStrings__tables`/`blobs` from the
+    `api` environment at 127.0.0.1, held run seeded): **46 passed, 0 failed, 0 skipped** (34.7 s wall), including the axe and focus cases
+    for `/configuration` and `/configuration/repositories/{id}` in both themes, `RunNowTests`, `RepositorySettingsTests`, `ReviewGateTests`.
+    After `aspire stop`: `dotnet build AutoRemediator.sln` 0 errors, 37 warnings (25 s); `dotnet test AutoRemediator.sln --filter
+    "FullyQualifiedName!~Web.FunctionalTests"`: Tools 27 passed, Domain 102, Agents 26 passed + 2 skipped, Workers 25, Api 69,
+    Infrastructure 267 passed + 23 skipped (2 m 34 s), 0 failures. Infrastructure re-run twice more: 267 passed + 23 skipped both times
+    (2 m 33 s, 2 m 28 s). For the one earlier failure of `VerificationEndToEndTests.No_workspace_directory_survives_a_run` see
+    finding 19.
+13. **Visual check** (headless Chromium screenshots, light and dark, 1440 and 390 px wide, of `/configuration` and three repository pages,
+    all looked at): see findings 16 and 20. Contrast, focus rings, the switches, the badges and the warning and info alerts looked fine
+    in both themes; no page scrolled horizontally at 390 px.
+
 ## Resource semantics observed
 
 - `aspire resource <x> start` on a `Finished` resource (explicit or automatic) runs it again; the logs are replaced.
@@ -241,7 +328,10 @@ exist; the results are kept as findings.
   `aspire describe --format Json` gives `exitCode`.
 - `web` stays `Waiting` while `api` has not started or failed; `scheduler` with `RunOnStart=true` goes `FailedToStart`
   when enrollment fails or when `local-scenarios` had failed earlier in the same session.
-- `aspire stop` normally took 0.8 s, once 30.9 s (right after an 85 s rebuild session).
+- `aspire stop` normally took 0.8 s, once 30.9 s (right after an 85 s rebuild session); 1.0 to 1.1 s in the 004 check.
+- `aspire resource ...`, `aspire logs <name>` and `aspire describe <name>` find the AppHost only from the repository
+  directory; from another directory they try to prompt for one and fail in a non-interactive shell ("Cannot show selection
+  prompt since the current terminal isn't interactive"). `aspire logs` with no resource name follows the logs forever.
 
 ## 3. Non-agentic mode (the model is disabled)
 
@@ -382,31 +472,34 @@ Each scenario repo carries its own settings (`tools/local-scenarios/scenarios.ps
 (patterns `Contoso.*`, `Fabrikam.*`, `Northwind.*`, `Tailspin.*`, the local feed, no excludes, no ignore, Minor, no
 pre-release, built-in daily `0 0 * * *`). One scheduler pass (or Run now per repo) reproduces every scenario, with
 `Model__Enabled=false`. The four global profiles and the switch-between-profiles routine no longer exist. "Actual" is
-from the task 10 verification (fresh rebuild, `LocalRepos__Enabled=true`, `Model__Enabled=false`); statuses and updates
-were read from `/api/runs/<id>`, the dependency map and the git repos.
+from the task 12 verification on 2026-10-15 (cold start with `.local` deleted, `LocalRepos__Enabled=true`,
+`Model__Enabled=false`, `held-review` seeded before the first pass); statuses, updates and diagnostics were read from
+`/api/runs/<id>`, the dependency map and `git -C .local/repos/<repo> diff main..autoremediator/dependency-updates`.
+Run ids are the first 8 characters.
 
 | Repo | Settings | Expected | Actual |
 | --- | --- | --- | --- |
-| patch-bump | Strategy Patch, schedule `0 3 * * *` | Contoso.Logging 1.2.0 -> 1.2.3, Completed | as expected |
-| minor-bump | inherits | Contoso.Http -> 2.4.1, both csproj edited, Completed | as expected |
-| major-compiles | Strategy Major | Northwind.Serialization -> 2.0.0, Completed | as expected |
-| major-breaking | Strategy Major | VerificationFailed, CS1061, 0 attempts, "No model is configured" transcript, no branch | as expected |
-| up-to-date | inherits | NoUpdates; map UpToDate | as expected |
-| no-matches | inherits | NoUpdates; nothing matched (AdventureWorks is not in the global patterns) | as expected, no map entries |
-| local-only | InheritGlobal false, patterns `AdventureWorks.*`, feed | AdventureWorks.Text 1.0.0 -> 1.5.0, Completed; Contoso.Logging stays 1.2.0 and is not in the map | as expected |
-| ignored-package | Ignore `Tailspin.Legacy.*` | Tailspin.Core -> 1.0.2 only; Tailspin.Legacy.Data Ignored | as expected |
-| prerelease | AllowPrerelease | Fabrikam.Telemetry -> 1.1.0-beta.2 | as expected |
-| family-alignment | inherits | SqlServer and Data -> 1.2.0; Abstractions -> 2.0.0 collateral beyond policy; Completed | as expected |
-| restore-conflict | inherits | Reporting -> 1.1.0; VerificationFailed with an NU diagnostic; loop not entered | as expected (NU1605 x3) |
-| lock-file | inherits | -> 1.2.3 with the regenerated lock file | as expected |
-| held-review | inherits | Seeded AwaitingReview; Run now refused (409); a due scheduler pass records SkippedHeld | as expected (see below) |
-| missing-branch | inherits (target `develop`) | NoUpdates (known gap) | as expected |
-| does-not-exist | inherits (no folder) | NoUpdates (known gap) | as expected |
-| disabled-repo | inherits (Enabled false) | No scheduled run; Run now runs it (Contoso.Logging 1.2.0 -> 1.2.3, Completed, Manual) and it stays disabled | as expected |
+| patch-bump | Strategy Patch, schedule `0 3 * * *` | Contoso.Logging 1.2.0 -> 1.2.3, Completed | as expected (e986acb2): Completed, `Directory.Packages.props` only; Run now 9d7da0ef Completed, `Manual` |
+| minor-bump | inherits | Contoso.Http -> 2.4.1, both csproj edited, Completed | as expected (30f32d59): Contoso.Http 2.1.0 -> 2.4.1, diff = `src/Api/Api.csproj` and `src/Worker/Worker.csproj` |
+| major-compiles | Strategy Major | Northwind.Serialization -> 2.0.0, Completed | as expected (21ae46c6): Northwind.Serialization 1.4.0 -> 2.0.0, Verified |
+| major-breaking | Strategy Major | VerificationFailed, CS1061, 0 attempts, "No model is configured" transcript, no branch | as expected (494f153d): VerificationFailed, DependencyFailure `CS1061`, `attempts` 0, transcript link, no branch |
+| up-to-date | inherits | NoUpdates; map UpToDate | as expected (3a2f11ba): NoUpdates. Run now 9cde33a5 NoUpdates, `Manual` |
+| no-matches | inherits | NoUpdates; nothing matched (AdventureWorks is not in the global patterns) | as expected (a24d09f0): NoUpdates, no map entries |
+| local-only | InheritGlobal false, patterns `AdventureWorks.*`, feed | AdventureWorks.Text 1.0.0 -> 1.5.0, Completed; Contoso.Logging stays 1.2.0 and is not in the map | as expected (716c628a): AdventureWorks.Text 1.0.0 -> 1.5.0, diff = `src/App/App.csproj` only; `Contoso.Logging` still 1.2.0 in the csproj; the map lists only AdventureWorks.Text |
+| ignored-package | Ignore `Tailspin.Legacy.*` | Tailspin.Core -> 1.0.2 only; Tailspin.Legacy.Data Ignored | as expected (f7d50a53): Tailspin.Core 1.0.0 -> 1.0.2 only; the map shows `Tailspin.Legacy.Data` Ignored |
+| prerelease | AllowPrerelease | Fabrikam.Telemetry -> 1.1.0-beta.2 | as expected (bbd9f27e): Fabrikam.Telemetry 1.0.0 -> 1.1.0-beta.2 |
+| family-alignment | inherits | SqlServer and Data -> 1.2.0; Abstractions -> 2.0.0 collateral beyond policy; Completed | as expected (481ca9d4): Data and SqlServer 1.0.0 -> 1.2.0 Matched, Abstractions 1.0.0 -> 2.0.0 Collateral and beyond policy, Verified |
+| restore-conflict | inherits | Reporting -> 1.1.0; VerificationFailed with an NU diagnostic; loop not entered | as expected (85c7bfae): Fabrikam.Reporting 1.0.0 -> 1.1.0, VerificationFailed, DependencyFailure `NU1605`, no remediation, no branch |
+| lock-file | inherits | -> 1.2.3 with the regenerated lock file | as expected (a61e87ab): Contoso.Logging 1.2.0 -> 1.2.3, diff = `Directory.Packages.props` and `src/App/packages.lock.json` |
+| held-review | inherits | Seeded AwaitingReview; Run now refused (409); a due scheduler pass records SkippedHeld | as expected: seeded 3c91fe07 `AwaitingReview`; Run now 409 `held` with that id; the first pass recorded one `SkippedHeld` (f43a2c48) and later ticks none |
+| missing-branch | inherits (target `develop`) | NoUpdates (known gap) | as expected (e5d33c90): NoUpdates |
+| does-not-exist | inherits (no folder) | NoUpdates (known gap) | as expected (a1bd4a12): NoUpdates |
+| disabled-repo | inherits (Enabled false) | No scheduled run; Run now runs it (Contoso.Logging 1.2.0 -> 1.2.3, Completed, Manual) and it stays disabled | as expected: no scheduled run (the pass enqueued 14 runs plus 1 `SkippedHeld` for the 15 enabled repos); Run now fe5e19e3 Completed, `Manual`, Contoso.Logging 1.2.0 -> 1.2.3, still disabled afterwards |
 
 Observations from the same session:
 
-- The first scheduler tick enqueued 15 runs (every enabled repo; `disabled-repo` excluded); later ticks reported
+- The first scheduler tick enqueued 14 runs and recorded 1 `SkippedHeld` (the 15 enabled repos, with `held-review` seeded
+  first; `disabled-repo` excluded); later ticks reported
   "not due 15" because each repo's next cron occurrence is in the future. With `Scheduler__DevLoopEnabled=true` and
   `Scheduler__DevLoopIntervalSeconds=60` before `aspire start` (the AppHost forwards both to `scheduler`) the scheduler
   keeps running as a real tick.
@@ -416,8 +509,9 @@ Observations from the same session:
 - `POST /api/repositories/<id>/run` on `held-review` returned 409 `held`; on `disabled-repo` it returned 202 and the run
   was `Completed`, trigger `Manual`, with the repository still disabled.
 - Editing a repo's settings and re-running `Set-LocalScenarioConfig.ps1 -ApiUrl <url>` put the catalogue settings back.
-- `LocalRepos__Profile` is obsolete: setting it prints `AppHost: LocalRepos__Profile is obsolete and ignored ...` once
-  at startup and changes nothing.
+- `LocalRepos__Profile` is obsolete: setting it logs `AppHost: LocalRepos__Profile is obsolete and ignored ...` once
+  at startup and changes nothing. The line goes to the AppHost log (`~/.aspire/logs/cli_<time>_detach-child_<id>.log`), not
+  to the console of `aspire start` and not to any resource log (finding 21).
 
 The four matrices below are the 002/003 results under the retired global settings profiles, kept as findings. They no
 longer apply to a current start: use the per-repo table above.
@@ -592,7 +686,10 @@ $env:ConnectionStrings__blobs='<same>'
 dotnet test tests/AutoRemediator.Web.FunctionalTests
 ```
 
-Result on the walkthrough machine: **30 passed, 0 failed, 0 skipped**, including `PullRequestDiffTests`,
+Result on 2026-10-15 (feature 004 check, whole suite, after a pass and a `held-run-seeder` start): **46 passed, 0 failed,
+0 skipped** in 34.7 s (28 s of test time; the 16 new tests are the repository page, Run now and settings suites plus the
+`/configuration` and `/configuration/repositories/{id}` axe and focus cases, light and dark). The earlier walkthrough result
+was **30 passed, 0 failed, 0 skipped**, including `PullRequestDiffTests`,
 `ReviewGateTests` (3), `FocusVisibleTests` (12, both themes and forced colors), the axe WCAG A/AA tests (both themes,
 run detail with the PR diff panel included), `HomePageSmokeTests` (2). The suite finds "a run with a PR diff" as
 the first run whose diff link is set; it passed here after a clean baseline pass (see troubleshooting for stale runs).
@@ -622,9 +719,10 @@ the first run whose diff link is set; it passed here after a clean baseline pass
   within 120 s), fix the cause, run `aspire resource local-scenarios-enroll start`, then start `scheduler`. If you set
   `LocalRepos__RunOnStart=true`, the scheduler did not start either (it waits for enrollment), so start it yourself
   after enrollment succeeds.
-- **`LocalRepos__Profile` is set**: obsolete and ignored, nothing fails. The AppHost prints `AppHost:
+- **`LocalRepos__Profile` is set**: obsolete and ignored, nothing fails. The AppHost logs `AppHost:
   LocalRepos__Profile is obsolete and ignored: each scenario repo carries its own settings (see
-  docs/local-testing.md).` once at startup. Unset it; per-repo settings come from `scenarios.psd1`.
+  docs/local-testing.md).` once at startup, to the AppHost log file in `~/.aspire/logs` (the `detach-child` log), not to
+  the `aspire start` console. Unset it; per-repo settings come from `scenarios.psd1`.
 - **A schedule is rejected with 400**: `PUT /api/repositories/<id>/settings` (or `PUT /api/settings` for the default
   schedule) returns a `ValidationProblem` keyed by field (`schedule`, `defaultSchedule`). Schedules are standard
   5-field cron in UTC (no seconds field) and must not fire more often than every 15 minutes; `*/15 * * * *` is the
@@ -719,8 +817,54 @@ Divergences and surprises from the executed walkthrough. None of these were fixe
     (about 4 s); "`scheduler` shows `FailedToStart`" after a `local-scenarios` failure (it stays `NotStarted` unless
     `RunOnStart=true`); and the `restart` wording for the first pass.
 
+14. **Cold rebuild took 255.7 s, not about 85 s (004).** Same machine, `.local` deleted: "Feed ready: 29 packages in 255s"
+    (provision 255.7 s). Nothing in the log explains it (no timestamps in `aspire logs`); the nuget cache purge, a cold `dotnet
+    pack` or machine load are candidates, none checked. The cold start is therefore about 4 min 25 s after `aspire start` returns,
+    not about 2 min. Warm starts matched the baseline (4.4 to 4.7 s provision).
+15. **The settings form does not show the "No package patterns" warning (004).** With inheritance off and no patterns the form shows
+    only the generic "This repository uses only the values below ..." note; the warning ("No package patterns: nothing will be
+    updated for this repository.") appears only in the Effective settings card, and only after the settings are saved (it reflects
+    stored settings). The design said "the UI shows the warning in the settings form and the effective view". The existing
+    functional test only checks the effective view.
+16. **Narrow screens hide columns without a cue (004, visual).** At 390 px the Configuration repositories table shows only
+    Organization, Project and Name; Enabled, Settings, Schedule, Run now and Delete are off-screen. The repository page's Effective
+    settings table shows a clipped "Sour" header and "Per i" / "R" / "G" cells, and patterns, feed path and dates wrap a few
+    characters per line. Both are keyboard-focusable scroll regions (`tabindex=0`, `role=region`, `overflow-x: auto`, scroll
+    width 949 against 340), so nothing is unreachable, but nothing says there is more to the right, and the Run now button and the
+    switch on the list are not visible without scrolling.
+17. **Validation errors are announced through the summary and the status line only (004).** The per-field error element has no
+    `role`/`aria-live`; the `role="alert"` summary ("Not saved: fix this field ...") and the `role="status"` line carry the
+    announcement. After a failed save `document.activeElement` is `body` (focus was not moved to the summary or the first invalid
+    field). `aria-invalid` and `aria-describedby` are correct.
+18. **`nextScheduledRunsUtc` for a never-scheduled repo starts with "now" (004).** Before the first pass the first entry is the time
+    of the request (`dueAtNextTick: true`), which is the designed "due at the next tick" but reads oddly as a "next run" timestamp.
+    Not checked in the UI before the first pass.
+19. **`No_workspace_directory_survives_a_run` is racy (cause found, test defect, 004 task 12).** The test counts the sub-directories
+    of `%TEMP%\autoremediator` before and after one verification and asserts equality, so any other process or test creating or
+    deleting a workspace there in between fails it (xUnit runs test classes in parallel, and a running `remediation` worker or
+    another session uses the same folder). It did not fail in three full Infrastructure runs and one alone (AppHost stopped).
+    Reproduced on purpose by creating and removing a directory in that folder while the test ran: "Assert.Equal() Failure: Values
+    differ, Expected: 1, Actual: 0". Fix idea (not done): count only the directories that this run created (a unique root or a hook
+    on the workspace), instead of the folder total.
+20. **Layout notes (004, visual).** In full-page screenshots the header and sidebar appear in the middle of the page and the sidebar
+    background stops at the viewport height; that is probably the fixed header and sidebar being captured at the scroll origin,
+    not verified in a real scroll. The "Settings saved." alert is inserted above the page title and pushes the page down.
+21. **Where the `LocalRepos__Profile` deprecation line goes (004).** It is only in the AppHost log file (`~/.aspire/logs/
+    cli_<time>_detach-child_<id>.log`), not in the `aspire start` console and not in any `aspire logs <resource>`, so with the
+    detached AppHost an operator never sees it. The doc previously said "prints at startup".
+22. **Task step 3 cannot be done literally (004).** `Contoso.*` is already in the global baseline, so adding it changes nothing;
+    `AdventureWorks.*` was used for the global pattern check (see the 004 check, step 5).
+23. **Doc claims corrected by this run (004).** "The `web` URL is not shown by `aspire describe`" (the task's note) is wrong here:
+    `aspire describe web --format Json` lists the `http` url, as this doc said. "The first scheduler tick enqueued 15 runs" holds
+    only when no repo is held (14 plus a `SkippedHeld` when `held-review` is seeded). The cold start is about 4 min 25 s on
+    this machine (finding 14). The `LocalRepos__Profile` notice goes to the AppHost log, not the console (finding 21).
+
 Unverified: a missing `git` or `dotnet` on PATH (only `pwsh` was removed); the dashboard rendering of `Finished <code>`
 (read from `aspire describe`, not the dashboard); that each `-Reset`/`-Force` effect is deterministic (one trial each).
+From the 004 check: the "No package patterns" warning in the form (finding 15) was read from the DOM and a screenshot, not with a
+screen reader; announcements were judged from roles and live regions, not heard; the wide-layout sidebar behaviour (finding 20)
+was not checked in a real scroll; the unseeded first pass (15 runs, no `SkippedHeld`) was not re-run; the held-run seeding was
+not tried after a rebuild; the Terraform deployment is out of scope and untested.
 
 No expected-results cell diverged (every status, version and flag in the matrices matched), so the findings above
 are product or doc observations rather than matrix failures.

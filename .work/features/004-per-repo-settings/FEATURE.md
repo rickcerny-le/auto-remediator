@@ -1,6 +1,6 @@
 # Per-repository settings, cron scheduling and Run now
 
-**Status:** todo
+**Status:** done
 **Created:** 2026-10-14
 
 ## Goal

@@ -1,6 +1,6 @@
 # 06 API for repository settings, effective settings and default schedule
 
-**Status:** todo
+**Status:** done
 **Feature:** 004-per-repo-settings
 **Depends on:** 05
 

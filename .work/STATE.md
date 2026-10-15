@@ -1,25 +1,24 @@
 # State
 
-**Active feature:** none (003-self-provisioning-scenarios implemented and verified; uncommitted on `rc/feat/self-provisioning-scenarios`)
+**Active feature:** none (004-per-repo-settings implemented and verified; committed on `rc/feat/per-repo-settings`)
 **Active task:** none
 **Queue:** empty
 **Blockers:** none
 
-## Done
-- 001-ui-redesign: committed (2f20d57).
-- 002-local-repo-mode: committed on `rc/feat/local-repo-mode` (020499a focus-ring fix, 510c118 feature).
-- 003-self-provisioning-scenarios (tasks 01-07): implemented and verified for real, NOT yet committed. Plan committed as b7be283. Also uncommitted: web favicon.svg replacing the Blazor favicon.png.
-  - Local mode `aspire start` now provisions `.local` (fingerprint skip, warm ~4 s, cold ~85 s), resets update branches/PR records (ResetOnStart default true), and enrolls 15 repos (14 enabled) with the baseline profile (`LocalRepos__Profile`). The scheduler is explicit-start unless `LocalRepos__RunOnStart=true`.
-  - Functional suite 30/30 against the running app; Tools tests 37; fingerprint self-test 34/34.
+## Done (branches are stacked: ui-redesign -> local-repo-mode -> self-provisioning-scenarios -> per-repo-settings)
+- 001-ui-redesign, 002-local-repo-mode (incl. focus-ring fix), 003-self-provisioning-scenarios, 004-per-repo-settings (Run now, layered per-repo settings + do-not-inherit switch, cron scheduling with daily default, due-based scheduler, effective-settings view/UI, schedule visibility, per-repo local scenarios).
+- 004 verified live: cold start auto-enrolls 16 repos; first pass enqueued 14 + 1 SkippedHeld; real cron tick ran `up-to-date` exactly once at 13:00 UTC; functional suite 46/46; unit suites 0 failures.
 
-## Findings to triage (docs/local-testing.md)
-- 002 findings 1-7 (empty commit on re-run, no-model "AI remediation" wording, Approve clears Updates, stale diff links, NU1605 triplicates, cosmetic).
-- 003 finding 8: transient `.git/logs/HEAD` permission error during warm reset (once in ~10 starts; unproven antivirus handle).
-- 003 finding 9: dependents (`api`, `remediation`, `scheduler`) stay FailedToStart after a failed `local-scenarios` even if it later succeeds; must be started by hand.
-- 003 finding 10: `-Reset`/`-Force` during a scheduler pass silently corrupts the pass.
-- 003 finding 12: low-confidence log-tail gap for the enroll failure.
-- Token-usage test fails under Ollama (budget may not be enforced).
+## Findings to triage (all in docs/local-testing.md and the PRD known defects)
+- 14 cold rebuild took ~255 s (doc said ~85 s; cause not found).
+- 15 settings form never shows the "No package patterns" warning (only the effective card).
+- 16 at 390 px the repos table hides columns after Name and the effective table clips Source, with no scroll cue.
+- 17 per-field errors have no role; focus lands on body after a failed save.
+- 18 first "next run" for a never-scheduled repo is the current time.
+- 19 `VerificationEndToEndTests.No_workspace_directory_survives_a_run` is racy (counts the shared %TEMP%\autoremediator directory); fix: count only the test's own directories.
+- 20 header/sidebar look mid-page in full-page screenshots; "Settings saved." alert shifts the page (unchecked in a real scroll).
+- 21 profile deprecation notice only in the AppHost log file.
+- Earlier: empty commit on re-run (finding 1, reconfirmed), no-model "AI remediation" wording, Approve clears Updates, stale PR diff links, NU1605 triplicates, dependents not recovering after failed local-scenarios, -Reset/-Force mid-pass corrupts the pass, transient .git/logs/HEAD permission error, Pkcs transitive advisory, Azurite tests hardcode default port (skip under Aspire), token-usage test fails under Ollama, terraform validate not run, deployed model setup still Foundry.
 
 ## Next
-- Commit 003; then pick fixes from the findings list.
-- Next feature: revamp the deployed model setup (`infra/terraform` still provisions Foundry).
+- Triage the findings; likely next features: deployed model setup revamp (Foundry -> Ollama/infra), a findings-fix sweep (empty commit, workspace test race, Pkcs pin, a11y gaps 15-17).

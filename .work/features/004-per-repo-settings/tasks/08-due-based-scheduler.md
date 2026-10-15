@@ -1,6 +1,6 @@
 # 08 Due-based scheduler with per-repository schedule state
 
-**Status:** todo
+**Status:** done
 **Feature:** 004-per-repo-settings
 **Depends on:** 01, 05
 

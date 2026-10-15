@@ -1,6 +1,6 @@
 # 04 Settings storage and effective-settings provider
 
-**Status:** todo
+**Status:** done
 **Feature:** 004-per-repo-settings
 **Depends on:** 03
 

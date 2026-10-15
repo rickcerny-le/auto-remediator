@@ -1,6 +1,6 @@
 # 03 Repository settings model, effective-settings resolver and cron helper
 
-**Status:** todo
+**Status:** done
 **Feature:** 004-per-repo-settings
 **Depends on:** none
 

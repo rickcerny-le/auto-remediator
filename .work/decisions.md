@@ -49,3 +49,5 @@ Append-only.
 - **Minimum cron interval 15 minutes is ASSUMED** (planner recommendation, not an explicit user answer); revisit if wanted.
 - **Per-repo Organization routing is out of scope** (needs a credential and client per organization); the field is labelled informational.
 - **Superseded:** 002's "scenarios run under global settings profiles" and 003's default profile `baseline` (replaced by per-repo settings in task 10).
+- **Feature 004 verified:** real cold start enrolls per-repo settings automatically; due-based ticks behave (one run per due occurrence); Run now works on normal/disabled repos and is refused (409) while held.
+- **Workspace test race (finding 19):** `No_workspace_directory_survives_a_run` compares the shared temp directory count; reproduce-by-churn proved it racy. Fix by counting only the test's own directories (not yet done).

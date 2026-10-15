@@ -1,6 +1,6 @@
 # 01 Run now and run trigger (backend)
 
-**Status:** todo
+**Status:** done
 **Feature:** 004-per-repo-settings
 **Depends on:** none
 

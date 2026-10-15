@@ -1,6 +1,6 @@
 # 09 Scheduler tick deployment and schedule visibility
 
-**Status:** todo
+**Status:** done
 **Feature:** 004-per-repo-settings
 **Depends on:** 07, 08
 

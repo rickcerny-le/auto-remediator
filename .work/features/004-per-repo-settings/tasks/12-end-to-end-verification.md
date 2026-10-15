@@ -1,6 +1,6 @@
 # 12 End-to-end verification in local mode
 
-**Status:** todo
+**Status:** done
 **Feature:** 004-per-repo-settings
 **Depends on:** 11
 
